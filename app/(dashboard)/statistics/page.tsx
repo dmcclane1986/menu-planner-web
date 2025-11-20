@@ -136,7 +136,7 @@ function StatisticsContent() {
     let upvotes = 0;
     let downvotes = 0;
     votesByPlan.forEach((votes) => {
-      const score = calculateVoteScore(votes);
+      const score = calculateVoteScore(votes as MenuVote[]);
       totalVoteScore += score;
       votes.forEach((v: any) => {
         if (v.vote === 1) upvotes++;
