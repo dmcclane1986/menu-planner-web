@@ -2,10 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import type { MealType, MenuGenre } from "@/types";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 interface MenuItem {
   id: string;
   name: string;
@@ -35,6 +31,11 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    // Initialize OpenAI client after checking for API key
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
 
     const body: GenerateMenuRequest = await request.json();
     const { menuItems, selections, dietaryInstructions, genreWeights } = body;
