@@ -15,34 +15,19 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // Check if InstantDB is configured
-  if (!isInstantDBConfigured) {
-    // Return error state if InstantDB is not configured
-    const errorValue: AuthContextType = {
-      user: null,
-      loading: false,
-      sendMagicCode: async () => {
-        throw new Error("InstantDB is not configured. Please set NEXT_PUBLIC_INSTANTDB_APP_ID.");
-      },
-      signInWithMagicCode: async () => {
-        throw new Error("InstantDB is not configured. Please set NEXT_PUBLIC_INSTANTDB_APP_ID.");
-      },
-      signOut: async () => {},
-    };
-    
-    return (
-      <AuthContext.Provider value={errorValue}>
-        {children}
-      </AuthContext.Provider>
-    );
-  }
-
-  // Use InstantDB's built-in useAuth hook
+  // Always call hooks at the top level - never conditionally
+  // Use InstantDB's built-in useAuth hook (will handle errors internally if not configured)
   const { user: authUser } = useInstantAuth();
   const [authCheckComplete, setAuthCheckComplete] = useState(false);
 
   // Set a timeout to prevent infinite loading
   useEffect(() => {
+    // If InstantDB is not configured, mark as complete immediately to avoid infinite loading
+    if (!isInstantDBConfigured) {
+      setAuthCheckComplete(true);
+      return;
+    }
+
     const timer = setTimeout(() => {
       setAuthCheckComplete(true);
     }, 1000); // Wait max 1 second for auth to resolve
@@ -56,9 +41,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timer);
   }, [authUser]);
 
-  // Fetch user data from InstantDB when authenticated
+  // Fetch user data from InstantDB when authenticated (only if configured)
   const { data, isLoading } = db.useQuery(
-    authUser && authCheckComplete
+    isInstantDBConfigured && authUser && authCheckComplete
       ? {
           users: {
             $: {
@@ -70,16 +55,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const dbUser = data?.users?.[0] as User | undefined;
+  
   // Loading is true if:
-  // - We haven't completed the initial auth check, OR
-  // - We have an authUser and we're loading their data from the database
-  const loading = !authCheckComplete || (authUser !== null && authUser !== undefined && isLoading);
+  // - InstantDB is configured AND we haven't completed the initial auth check, OR
+  // - InstantDB is configured AND we have an authUser and we're loading their data from the database
+  const loading = isInstantDBConfigured && (!authCheckComplete || (authUser !== null && authUser !== undefined && isLoading));
 
   const sendMagicCode = async (email: string) => {
+    if (!isInstantDBConfigured) {
+      throw new Error("InstantDB is not configured. Please set NEXT_PUBLIC_INSTANTDB_APP_ID.");
+    }
     await db.auth.sendMagicCode({ email });
   };
 
   const signInWithMagicCode = async (email: string, code: string, name?: string) => {
+    if (!isInstantDBConfigured) {
+      throw new Error("InstantDB is not configured. Please set NEXT_PUBLIC_INSTANTDB_APP_ID.");
+    }
     const result = await db.auth.signInWithMagicCode({ email, code });
     if (result?.user) {
       // Create or update user record in InstantDB
@@ -98,16 +90,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     // InstantDB doesn't have a signOut method, user stays signed in
     // We'll handle this by clearing local state
-    window.location.href = "/login";
+    if (typeof window !== "undefined") {
+      window.location.href = "/login";
+    }
   };
 
+  // Build the value object - handle both configured and unconfigured states
   const value: AuthContextType = {
-    user: dbUser || (authUser ? {
-      id: authUser.id,
-      email: authUser.email || "",
-      name: authUser.email?.split("@")[0] || "User",
-      created_at: Date.now(),
-    } : null),
+    user: isInstantDBConfigured 
+      ? (dbUser || (authUser ? {
+          id: authUser.id,
+          email: authUser.email || "",
+          name: authUser.email?.split("@")[0] || "User",
+          created_at: Date.now(),
+        } : null))
+      : null,
     loading,
     sendMagicCode,
     signInWithMagicCode,
