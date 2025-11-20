@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/lib/instantdb/auth";
 import { db } from "@/lib/instantdb/config";
@@ -102,8 +102,8 @@ function AIMenuContent() {
       : null
   );
 
-  const householdMembers = membersQuery.data?.household_members || [];
-  const allHouseholds = householdsQuery.data?.households || [];
+  const householdMembers = useMemo(() => membersQuery.data?.household_members || [], [membersQuery.data?.household_members]);
+  const allHouseholds = useMemo(() => householdsQuery.data?.households || [], [householdsQuery.data?.households]);
   const menuItems = menuItemsQuery.data?.menu_items || [];
   const aiPreferences = aiPreferencesQuery.data?.ai_preferences?.[0];
   const existingMenuPlans = menuPlansQuery.data?.menu_plans || [];
@@ -127,7 +127,7 @@ function AIMenuContent() {
     if (!selectedHouseholdId && userHouseholds.length > 0 && userHouseholds[0]) {
       setSelectedHouseholdId(userHouseholds[0].id);
     }
-  }, [selectedHouseholdId, householdMembers, allHouseholds]);
+  }, [selectedHouseholdId, householdMembers, allHouseholds, userHouseholds]);
 
   // Load AI preferences when household is selected
   useEffect(() => {
@@ -145,7 +145,7 @@ function AIMenuContent() {
       if (aiPreferences.genre_weights) {
         try {
           const weights = JSON.parse(aiPreferences.genre_weights);
-          setGenreWeights({ ...genreWeights, ...weights });
+          setGenreWeights((prev) => ({ ...prev, ...weights }));
         } catch (e) {
           // Use defaults if parsing fails
         }
