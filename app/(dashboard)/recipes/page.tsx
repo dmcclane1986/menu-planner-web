@@ -357,9 +357,9 @@ function RecipesContent() {
   ];
 
   return (
-    <div className="min-h-screen p-8">
+    <div className="min-h-screen p-4 sm:p-6 md:p-8">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8 text-primary">Recipes</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold mb-6 sm:mb-8 text-primary">Recipes</h1>
 
         {error && (
           <div className="mb-4 bg-red-500/10 border border-red-500 text-red-500 rounded-lg p-3 text-sm">
@@ -467,7 +467,7 @@ function RecipesContent() {
                   required
                 />
 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <Input
                     label="Prep Time (minutes) - Optional"
                     type="number"
@@ -503,67 +503,77 @@ function RecipesContent() {
                 />
 
                 <div>
-                  <div className="flex justify-between items-center mb-2">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-3">
                     <label className="block text-sm font-medium text-foreground">
                       Ingredients
                     </label>
-                    <Button type="button" variant="outline" size="sm" onClick={addIngredient}>
+                    <Button type="button" variant="outline" size="sm" onClick={addIngredient} className="w-full sm:w-auto">
                       + Add Ingredient
                     </Button>
                   </div>
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     {ingredients.map((ingredient, index) => (
-                      <div key={index} className="grid grid-cols-12 gap-2 items-end">
-                        <div className="col-span-5">
-                          <Input
-                            placeholder="Ingredient name"
-                            value={ingredient.name}
-                            onChange={(e) =>
-                              updateIngredient(index, "name", e.target.value)
-                            }
-                          />
-                        </div>
-                        <div className="col-span-3">
-                          <Input
-                            placeholder="Quantity (optional)"
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={ingredient.quantity || ""}
-                            onChange={(e) =>
-                              updateIngredient(index, "quantity", parseFloat(e.target.value) || 0)
-                            }
-                          />
-                        </div>
-                        <div className="col-span-3">
-                          <Input
-                            placeholder="Unit (optional, e.g., cups, oz)"
-                            value={ingredient.unit}
-                            onChange={(e) => updateIngredient(index, "unit", e.target.value)}
-                          />
-                        </div>
-                        <div className="col-span-1">
-                          {ingredients.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => removeIngredient(index)}
-                            >
-                              ×
-                            </Button>
-                          )}
+                      <div key={index} className="bg-secondary-lighter/50 rounded-lg p-3 sm:p-4">
+                        <div className="flex flex-col sm:grid sm:grid-cols-12 gap-3 sm:gap-2 items-stretch sm:items-end">
+                          <div className="col-span-12 sm:col-span-5">
+                            <label className="block text-xs text-gray-400 mb-1 sm:hidden">Ingredient Name</label>
+                            <Input
+                              placeholder="Ingredient name"
+                              value={ingredient.name}
+                              onChange={(e) =>
+                                updateIngredient(index, "name", e.target.value)
+                              }
+                              className="w-full"
+                            />
+                          </div>
+                          <div className="col-span-12 sm:col-span-3">
+                            <label className="block text-xs text-gray-400 mb-1 sm:hidden">Quantity</label>
+                            <Input
+                              placeholder="Quantity (optional)"
+                              type="number"
+                              min="0"
+                              step="0.1"
+                              value={ingredient.quantity || ""}
+                              onChange={(e) =>
+                                updateIngredient(index, "quantity", parseFloat(e.target.value) || 0)
+                              }
+                              className="w-full"
+                            />
+                          </div>
+                          <div className="col-span-12 sm:col-span-3">
+                            <label className="block text-xs text-gray-400 mb-1 sm:hidden">Unit</label>
+                            <Input
+                              placeholder="Unit (optional, e.g., cups, oz)"
+                              value={ingredient.unit}
+                              onChange={(e) => updateIngredient(index, "unit", e.target.value)}
+                              className="w-full"
+                            />
+                          </div>
+                          <div className="col-span-12 sm:col-span-1 flex justify-end sm:justify-start">
+                            {ingredients.length > 1 && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => removeIngredient(index)}
+                                className="w-full sm:w-auto min-w-[44px] touch-manipulation"
+                                aria-label="Remove ingredient"
+                              >
+                                ×
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div className="flex gap-4">
-                  <Button type="submit" disabled={loading}>
+                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-2">
+                  <Button type="submit" disabled={loading} className="w-full sm:w-auto">
                     {editingRecipe ? "Update" : "Create"} Recipe
                   </Button>
-                  <Button type="button" variant="outline" onClick={cancelEdit}>
+                  <Button type="button" variant="outline" onClick={cancelEdit} className="w-full sm:w-auto">
                     Cancel
                   </Button>
                 </div>

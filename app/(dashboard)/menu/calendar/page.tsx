@@ -422,11 +422,11 @@ function MenuCalendarContent() {
       : currentMonthYear;
 
   return (
-    <div className="min-h-screen p-8">
+    <div className="min-h-screen p-4 sm:p-6 md:p-8">
       <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-primary">Menu Calendar</h1>
-          <div className="flex gap-4 items-center">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6 md:mb-8">
+          <h1 className="text-2xl sm:text-3xl font-bold text-primary">Menu Calendar</h1>
+          <div className="flex flex-wrap gap-3 sm:gap-4 items-center">
             <div className="flex gap-2">
               <Button
                 variant={viewMode === "week" ? "primary" : "outline"}
@@ -447,7 +447,7 @@ function MenuCalendarContent() {
               <select
                 value={selectedHouseholdId || ""}
                 onChange={(e) => setSelectedHouseholdId(e.target.value)}
-                className="px-4 py-2 bg-secondary-light border border-secondary-lighter rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                className="px-3 sm:px-4 py-2 text-sm sm:text-base bg-secondary-light border border-secondary-lighter rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary w-full sm:w-auto"
               >
                 {userHouseholds.map((household: any) => (
                   <option key={household.id} value={household.id}>
@@ -466,23 +466,23 @@ function MenuCalendarContent() {
         )}
 
         {/* Calendar Navigation */}
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={navigatePrevious}>
-              ← Previous
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
+          <div className="flex gap-2 w-full sm:w-auto">
+            <Button variant="outline" size="sm" onClick={navigatePrevious} className="flex-1 sm:flex-initial">
+              ← Prev
             </Button>
-            <Button variant="outline" size="sm" onClick={navigateToday}>
+            <Button variant="outline" size="sm" onClick={navigateToday} className="flex-1 sm:flex-initial">
               Today
             </Button>
-            <Button variant="outline" size="sm" onClick={navigateNext}>
+            <Button variant="outline" size="sm" onClick={navigateNext} className="flex-1 sm:flex-initial">
               Next →
             </Button>
           </div>
-          <h2 className="text-2xl font-semibold">{weekRange}</h2>
+          <h2 className="text-lg sm:text-xl md:text-2xl font-semibold text-center sm:text-left">{weekRange}</h2>
         </div>
 
         {/* Calendar Grid */}
-        <div className="overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
+        <div className="overflow-x-auto -mx-4 sm:-mx-6 md:mx-0 px-4 sm:px-6 md:px-0">
           {viewMode === "week" ? (
             <WeekView
               dates={dates}
@@ -520,9 +520,9 @@ function MenuCalendarContent() {
 
         {/* Add/Edit Modal */}
         {showAddModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <Card className="w-full max-w-md m-4">
-              <h2 className="text-xl font-semibold mb-4">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
+              <h2 className="text-lg sm:text-xl font-semibold mb-4">
                 {editingPlan ? "Edit Menu Plan" : "Add Menu Item"}
               </h2>
               <form onSubmit={handleSaveMenuPlan}>
@@ -629,8 +629,8 @@ function WeekView({
 
   return (
     <div className="border border-secondary-lighter rounded-lg overflow-hidden">
-      <div className="grid grid-cols-8 bg-secondary-light">
-        <div className="p-2 md:p-4 border-r border-secondary-lighter font-semibold text-xs md:text-base">Meal</div>
+      <div className="grid grid-cols-8 bg-secondary-light min-w-[640px]">
+        <div className="p-2 sm:p-3 md:p-4 border-r border-secondary-lighter font-semibold text-xs sm:text-sm md:text-base sticky left-0 z-10 bg-secondary-light">Meal</div>
         {dates.map((date, idx) => {
           // Get day of week (0 = Sunday, 6 = Saturday)
           // Adjust to Monday = 0
@@ -638,20 +638,20 @@ function WeekView({
           return (
             <div
               key={idx}
-              className="p-2 md:p-4 border-r border-secondary-lighter text-center font-semibold last:border-r-0 text-xs md:text-base"
+              className="p-2 sm:p-3 md:p-4 border-r border-secondary-lighter text-center font-semibold last:border-r-0 text-xs sm:text-sm md:text-base"
             >
-              <div className="hidden md:block">{dayNames[dayIndex]}</div>
-              <div className="md:hidden">{dayNames[dayIndex].charAt(0)}</div>
-              <div className="text-xs text-gray-400 hidden md:block">{formatDateDisplay(date)}</div>
+              <div className="hidden sm:block">{dayNames[dayIndex]}</div>
+              <div className="sm:hidden">{dayNames[dayIndex].charAt(0)}</div>
+              <div className="text-[10px] sm:text-xs text-gray-400 hidden sm:block mt-0.5">{formatDateDisplay(date)}</div>
             </div>
           );
         })}
       </div>
       {mealTypes.map((mealType) => (
-        <div key={mealType} className="grid grid-cols-8 border-t border-secondary-lighter">
-          <div className="p-2 md:p-4 border-r border-secondary-lighter bg-secondary-light font-medium text-xs md:text-base">
-            <span className="hidden md:inline">{mealTypeLabels[mealType]}</span>
-            <span className="md:hidden">{mealTypeLabels[mealType].charAt(0)}</span>
+        <div key={mealType} className="grid grid-cols-8 border-t border-secondary-lighter min-w-[640px]">
+          <div className="p-2 sm:p-3 md:p-4 border-r border-secondary-lighter bg-secondary-light font-medium text-xs sm:text-sm md:text-base sticky left-0 z-10">
+            <span className="hidden sm:inline">{mealTypeLabels[mealType]}</span>
+            <span className="sm:hidden">{mealTypeLabels[mealType].charAt(0)}</span>
           </div>
           {dates.map((date, idx) => {
             const dateStr = formatDate(date);
@@ -661,25 +661,25 @@ function WeekView({
             return (
               <div
                 key={idx}
-                className="p-1 md:p-2 border-r border-secondary-lighter last:border-r-0 min-h-[80px] md:min-h-[100px] hover:bg-secondary-light/50 transition-colors"
+                className="p-1 sm:p-1.5 md:p-2 border-r border-secondary-lighter last:border-r-0 min-h-[90px] sm:min-h-[95px] md:min-h-[100px] hover:bg-secondary-light/50 transition-colors"
               >
                 {plan && menuItem ? (
-                  <div className="group">
-                    <Card className="p-1.5 md:p-2">
-                      <div className="flex justify-between items-start mb-1.5 md:mb-2">
+                  <div className="group h-full flex flex-col">
+                    <Card className="p-1.5 sm:p-2 h-full flex flex-col">
+                      <div className="flex justify-between items-start mb-1.5 sm:mb-2 gap-1">
                         <div 
-                          className="flex-1 cursor-pointer"
+                          className="flex-1 cursor-pointer min-w-0"
                           onClick={() => openEditModal(plan)}
                         >
-                          <p className="font-medium text-xs md:text-sm truncate">{menuItem.name}</p>
-                          <p className="text-xs text-gray-400 hidden md:block">{menuItem.genre}</p>
+                          <p className="font-medium text-[11px] sm:text-xs md:text-sm truncate leading-tight">{menuItem.name}</p>
+                          <p className="text-[10px] sm:text-xs text-gray-400 hidden sm:block mt-0.5">{menuItem.genre}</p>
                         </div>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleDeleteMenuPlan(plan.id);
                           }}
-                          className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-red-500 text-sm md:text-xs touch-manipulation"
+                          className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-red-500 text-base sm:text-sm md:text-xs touch-manipulation flex-shrink-0 px-0.5"
                           aria-label="Delete"
                         >
                           ×
@@ -687,11 +687,11 @@ function WeekView({
                       </div>
                       
                       {/* Voting UI - Touch-friendly */}
-                      <div className="flex items-center gap-1.5 md:gap-1" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-1.5 sm:gap-1 mt-auto" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => handleVote(plan.id, 1)}
                           disabled={loading}
-                          className={`flex items-center justify-center gap-1 px-2.5 py-2 md:px-2 md:py-1 rounded text-sm md:text-xs transition-colors touch-manipulation min-w-[36px] md:min-w-0 ${
+                          className={`flex items-center justify-center gap-0.5 px-2 py-1.5 sm:px-2 sm:py-1 md:px-2 md:py-1 rounded text-xs sm:text-[11px] md:text-xs transition-colors touch-manipulation min-w-[32px] sm:min-w-[28px] md:min-w-0 ${
                             getUserVote(plan.id)?.vote === 1
                               ? "bg-green-500/20 text-green-400"
                               : "bg-secondary-lighter hover:bg-secondary-light active:bg-secondary-light text-gray-400"
@@ -699,15 +699,15 @@ function WeekView({
                           title="Upvote"
                           aria-label="Upvote"
                         >
-                          <span>▲</span>
+                          <span className="text-[10px] sm:text-xs">▲</span>
                         </button>
-                        <span className="text-xs text-gray-400 min-w-[24px] md:min-w-[20px] text-center font-medium">
+                        <span className="text-[11px] sm:text-xs text-gray-400 min-w-[20px] sm:min-w-[18px] text-center font-medium">
                           {calculateVoteScore(getVotesForPlan(plan.id))}
                         </span>
                         <button
                           onClick={() => handleVote(plan.id, -1)}
                           disabled={loading}
-                          className={`flex items-center justify-center gap-1 px-2.5 py-2 md:px-2 md:py-1 rounded text-sm md:text-xs transition-colors touch-manipulation min-w-[36px] md:min-w-0 ${
+                          className={`flex items-center justify-center gap-0.5 px-2 py-1.5 sm:px-2 sm:py-1 md:px-2 md:py-1 rounded text-xs sm:text-[11px] md:text-xs transition-colors touch-manipulation min-w-[32px] sm:min-w-[28px] md:min-w-0 ${
                             getUserVote(plan.id)?.vote === -1
                               ? "bg-red-500/20 text-red-400"
                               : "bg-secondary-lighter hover:bg-secondary-light active:bg-secondary-light text-gray-400"
@@ -715,7 +715,7 @@ function WeekView({
                           title="Downvote"
                           aria-label="Downvote"
                         >
-                          <span>▼</span>
+                          <span className="text-[10px] sm:text-xs">▼</span>
                         </button>
                       </div>
                     </Card>
@@ -723,7 +723,7 @@ function WeekView({
                 ) : (
                   <button
                     onClick={() => openAddModal(dateStr, mealType)}
-                    className="w-full h-full text-gray-500 hover:text-primary hover:bg-secondary-light/50 active:bg-secondary-light rounded transition-colors text-xs md:text-sm touch-manipulation py-2"
+                    className="w-full h-full text-gray-500 hover:text-primary hover:bg-secondary-light/50 active:bg-secondary-light rounded transition-colors text-[11px] sm:text-xs md:text-sm touch-manipulation py-2 flex items-center justify-center"
                   >
                     + Add
                   </button>

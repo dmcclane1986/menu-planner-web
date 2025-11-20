@@ -151,9 +151,9 @@ function HouseholdContent() {
   }
 
   return (
-    <div className="min-h-screen p-8">
+    <div className="min-h-screen p-4 sm:p-6 md:p-8">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8 text-primary">Households</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold mb-6 sm:mb-8 text-primary">Households</h1>
 
         {error && (
           <div className="mb-4 bg-red-500/10 border border-red-500 text-red-500 rounded-lg p-3 text-sm">
@@ -256,23 +256,24 @@ function HouseholdContent() {
 
               return (
                 <Card key={household.id}>
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <h3 className="text-xl font-semibold mb-2">{household.name}</h3>
-                      <p className="text-sm text-gray-400 mb-1">
-                        Household ID: <code className="bg-secondary-lighter px-2 py-1 rounded">{household.id}</code>
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg sm:text-xl font-semibold mb-2">{household.name}</h3>
+                      <p className="text-xs sm:text-sm text-gray-400 mb-2 break-all">
+                        <span className="block sm:inline">Household ID: </span>
+                        <code className="bg-secondary-lighter px-2 py-1 rounded text-[10px] sm:text-xs break-all block sm:inline-block mt-1 sm:mt-0">{household.id}</code>
                       </p>
                       {isHead && (
-                        <span className="inline-block mt-2 px-3 py-1 bg-primary/20 text-primary rounded-full text-sm font-medium">
+                        <span className="inline-block mt-2 px-3 py-1 bg-primary/20 text-primary rounded-full text-xs sm:text-sm font-medium">
                           Head of Household
                         </span>
                       )}
                     </div>
-                    <div className="text-right ml-4">
+                    <div className="w-full sm:w-auto sm:text-right sm:ml-4 flex-shrink-0">
                       {editingThreshold === household.id ? (
                         <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <label className="text-sm text-gray-400 whitespace-nowrap">
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                            <label className="text-xs sm:text-sm text-gray-400 whitespace-nowrap">
                               Threshold:
                             </label>
                             <input
@@ -284,15 +285,16 @@ function HouseholdContent() {
                                   [household.id]: e.target.value,
                                 })
                               }
-                              className="w-24 px-3 py-1.5 bg-secondary-light border border-secondary-lighter rounded-lg text-foreground placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
+                              className="w-full sm:w-24 px-3 py-1.5 bg-secondary-light border border-secondary-lighter rounded-lg text-foreground placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
                               placeholder="-5"
                             />
                           </div>
-                          <div className="flex gap-2 justify-end">
+                          <div className="flex gap-2 sm:justify-end">
                             <Button
                               size="sm"
                               onClick={() => handleSaveThreshold(household.id)}
                               disabled={thresholdLoading[household.id]}
+                              className="flex-1 sm:flex-initial"
                             >
                               {thresholdLoading[household.id] ? "Saving..." : "Save"}
                             </Button>
@@ -301,6 +303,7 @@ function HouseholdContent() {
                               variant="outline"
                               onClick={() => handleCancelEditThreshold(household.id)}
                               disabled={thresholdLoading[household.id]}
+                              className="flex-1 sm:flex-initial"
                             >
                               Cancel
                             </Button>
@@ -308,7 +311,7 @@ function HouseholdContent() {
                         </div>
                       ) : (
                         <div className="space-y-2">
-                          <p className="text-sm text-gray-400">
+                          <p className="text-xs sm:text-sm text-gray-400 sm:text-right">
                             Popularity Threshold: <span className="font-medium text-white">{household.popularity_threshold}</span>
                           </p>
                           {isHead && (
@@ -316,6 +319,7 @@ function HouseholdContent() {
                               size="sm"
                               variant="outline"
                               onClick={() => handleStartEditThreshold(household.id, household.popularity_threshold)}
+                              className="w-full sm:w-auto"
                             >
                               Edit Threshold
                             </Button>
