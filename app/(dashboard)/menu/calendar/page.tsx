@@ -481,8 +481,8 @@ function MenuCalendarContent() {
           <h2 className="text-lg sm:text-xl md:text-2xl font-semibold text-center sm:text-left">{weekRange}</h2>
         </div>
 
-        {/* Calendar Grid */}
-        <div className="overflow-x-auto -mx-4 sm:-mx-6 md:mx-0 px-4 sm:px-6 md:px-0">
+        {/* Calendar Grid - Desktop view */}
+        <div className="hidden md:block overflow-x-auto -mx-4 sm:-mx-6 md:mx-0 px-4 sm:px-6 md:px-0">
           {viewMode === "week" ? (
             <WeekView
               dates={dates}
@@ -517,6 +517,48 @@ function MenuCalendarContent() {
             />
           )}
         </div>
+
+        {/* Mobile Slide View */}
+        {viewMode === "week" && (
+          <div className="md:hidden">
+            <WeekSlideView
+              dates={dates}
+              mealTypes={mealTypes}
+              mealTypeLabels={mealTypeLabels}
+              getMenuPlan={getMenuPlan}
+              getMenuItem={getMenuItem}
+              getVotesForPlan={getVotesForPlan}
+              getUserVote={getUserVote}
+              handleVote={handleVote}
+              openAddModal={openAddModal}
+              openEditModal={openEditModal}
+              handleDeleteMenuPlan={handleDeleteMenuPlan}
+              formatDate={formatDate}
+              formatDateDisplay={formatDateDisplay}
+              loading={loading}
+            />
+          </div>
+        )}
+
+        {/* Mobile Month View */}
+        {viewMode === "month" && (
+          <div className="md:hidden overflow-x-auto -mx-4 px-4">
+            <MonthView
+              dates={dates}
+              mealTypes={mealTypes}
+              mealTypeLabels={mealTypeLabels}
+              getMenuPlan={getMenuPlan}
+              getMenuItem={getMenuItem}
+              getVotesForPlan={getVotesForPlan}
+              openAddModal={openAddModal}
+              openEditModal={openEditModal}
+              handleDeleteMenuPlan={handleDeleteMenuPlan}
+              formatDate={formatDate}
+              formatDateDisplay={formatDateDisplay}
+              currentDate={currentDate}
+            />
+          </div>
+        )}
 
         {/* Add/Edit Modal */}
         {showAddModal && (
@@ -588,6 +630,216 @@ function MenuCalendarContent() {
             </Card>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Mobile Week Slide View Component - Swipeable
+function WeekSlideView({
+  dates,
+  mealTypes,
+  mealTypeLabels,
+  getMenuPlan,
+  getMenuItem,
+  getVotesForPlan,
+  getUserVote,
+  handleVote,
+  openAddModal,
+  openEditModal,
+  handleDeleteMenuPlan,
+  formatDate,
+  formatDateDisplay,
+  loading,
+}: {
+  dates: Date[];
+  mealTypes: MealType[];
+  mealTypeLabels: Record<MealType, string>;
+  getMenuPlan: (date: string, mealType: MealType) => MenuPlan | undefined;
+  getMenuItem: (menuItemId: string) => MenuItem | undefined;
+  getVotesForPlan: (menuPlanId: string) => MenuVote[];
+  getUserVote: (menuPlanId: string) => MenuVote | undefined;
+  handleVote: (planId: string, vote: VoteValue) => Promise<void>;
+  openAddModal: (date: string, mealType: MealType) => void;
+  openEditModal: (plan: MenuPlan) => void;
+  handleDeleteMenuPlan: (planId: string) => void;
+  formatDate: (date: Date) => string;
+  formatDateDisplay: (date: Date) => string;
+  loading: boolean;
+}) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+
+  // Minimum swipe distance (in px) to trigger navigation
+  const minSwipeDistance = 50;
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+
+    if (isLeftSwipe && currentIndex < dates.length - 1) {
+      setCurrentIndex(currentIndex + 1);
+    } else if (isRightSwipe && currentIndex > 0) {
+      setCurrentIndex(currentIndex - 1);
+    }
+  };
+
+  const currentDate = dates[currentIndex];
+  const dateStr = formatDate(currentDate);
+  const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const dayIndex = currentDate.getDay() === 0 ? 6 : currentDate.getDay() - 1;
+
+  return (
+    <div className="w-full">
+      {/* Day Indicator */}
+      <div className="mb-4 flex items-center justify-between">
+        <button
+          onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
+          disabled={currentIndex === 0}
+          className="px-4 py-2 bg-secondary-light border border-secondary-lighter rounded-lg disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
+          aria-label="Previous day"
+        >
+          ←
+        </button>
+        <div className="text-center flex-1 mx-4">
+          <div className="text-lg font-semibold">{dayNames[dayIndex]}</div>
+          <div className="text-sm text-gray-400">{formatDateDisplay(currentDate)}</div>
+          <div className="text-xs text-gray-500 mt-1">
+            {currentIndex + 1} of {dates.length}
+          </div>
+        </div>
+        <button
+          onClick={() => setCurrentIndex(Math.min(dates.length - 1, currentIndex + 1))}
+          disabled={currentIndex === dates.length - 1}
+          className="px-4 py-2 bg-secondary-light border border-secondary-lighter rounded-lg disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
+          aria-label="Next day"
+        >
+          →
+        </button>
+      </div>
+
+      {/* Swipeable Content */}
+      <div
+        className="touch-pan-y"
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        style={{ touchAction: 'pan-y' }}
+      >
+        <div className="space-y-4">
+          {mealTypes.map((mealType) => {
+            const plan = getMenuPlan(dateStr, mealType);
+            const menuItem = plan ? getMenuItem(plan.menu_item_id) : null;
+
+            return (
+              <Card key={mealType} className="p-4">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-lg font-semibold text-primary">{mealTypeLabels[mealType]}</h3>
+                  {!plan && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openAddModal(dateStr, mealType)}
+                    >
+                      + Add
+                    </Button>
+                  )}
+                </div>
+
+                {plan && menuItem ? (
+                  <div className="space-y-3">
+                    <div 
+                      className="p-3 bg-secondary-lighter rounded-lg cursor-pointer"
+                      onClick={() => openEditModal(plan)}
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex-1">
+                          <p className="font-medium text-base mb-1">{menuItem.name}</p>
+                          <p className="text-sm text-gray-400">{menuItem.genre}</p>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteMenuPlan(plan.id);
+                          }}
+                          className="text-red-500 text-xl touch-manipulation px-2 py-1 hover:bg-red-500/20 rounded"
+                          aria-label="Delete"
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      {/* Voting UI */}
+                      <div className="flex items-center justify-center gap-3 pt-2 border-t border-secondary-lighter" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => handleVote(plan.id, 1)}
+                          disabled={loading}
+                          className={`flex items-center justify-center px-4 py-3 rounded-lg text-base transition-colors touch-manipulation min-w-[60px] h-[50px] ${
+                            getUserVote(plan.id)?.vote === 1
+                              ? "bg-green-500/20 text-green-400 border-2 border-green-500/30"
+                              : "bg-secondary-light hover:bg-secondary-lighter active:bg-secondary-lighter text-gray-400"
+                          }`}
+                          title="Upvote"
+                          aria-label="Upvote"
+                        >
+                          ▲
+                        </button>
+                        <span className="text-lg text-gray-400 min-w-[40px] text-center font-semibold">
+                          {calculateVoteScore(getVotesForPlan(plan.id))}
+                        </span>
+                        <button
+                          onClick={() => handleVote(plan.id, -1)}
+                          disabled={loading}
+                          className={`flex items-center justify-center px-4 py-3 rounded-lg text-base transition-colors touch-manipulation min-w-[60px] h-[50px] ${
+                            getUserVote(plan.id)?.vote === -1
+                              ? "bg-red-500/20 text-red-400 border-2 border-red-500/30"
+                              : "bg-secondary-light hover:bg-secondary-lighter active:bg-secondary-lighter text-gray-400"
+                          }`}
+                          title="Downvote"
+                          aria-label="Downvote"
+                        >
+                          ▼
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => openAddModal(dateStr, mealType)}
+                    className="w-full py-8 text-gray-500 hover:text-primary hover:bg-secondary-light/50 active:bg-secondary-light rounded-lg transition-colors text-base touch-manipulation border-2 border-dashed border-secondary-lighter"
+                  >
+                    + Add {mealTypeLabels[mealType]}
+                  </button>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Swipe Indicator */}
+      <div className="mt-4 flex justify-center gap-2">
+        {dates.map((_, idx) => (
+          <div
+            key={idx}
+            className={`h-2 rounded-full transition-all ${
+              idx === currentIndex ? "w-8 bg-primary" : "w-2 bg-secondary-lighter"
+            }`}
+          />
+        ))}
       </div>
     </div>
   );
