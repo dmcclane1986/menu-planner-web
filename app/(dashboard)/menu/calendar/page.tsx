@@ -1,0 +1,848 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { useAuth } from "@/lib/instantdb/auth";
+import { db } from "@/lib/instantdb/config";
+import { createMenuPlan, deleteMenuPlan, updateMenuPlan } from "@/lib/utils/menuPlans";
+import { createOrUpdateVote, deleteVote, calculateVoteScore } from "@/lib/utils/votes";
+import { updateMenuItem } from "@/lib/utils/menu";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { Select } from "@/components/ui/Select";
+import type { MenuPlan, MenuItem, MealType, MenuVote, VoteValue } from "@/types";
+
+export default function MenuCalendarPage() {
+  return (
+    <ProtectedRoute>
+      <MenuCalendarContent />
+    </ProtectedRoute>
+  );
+}
+
+function MenuCalendarContent() {
+  const { user } = useAuth();
+  const [selectedHouseholdId, setSelectedHouseholdId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"week" | "month">("week");
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [selectedMealType, setSelectedMealType] = useState<MealType>("dinner");
+  const [selectedMenuItemId, setSelectedMenuItemId] = useState("");
+  const [editingPlan, setEditingPlan] = useState<MenuPlan | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // Query household members for this user
+  const membersQuery = db.useQuery(
+    user?.id
+      ? {
+          household_members: {
+            $: {
+              where: { user_id: user.id },
+            },
+          },
+        }
+      : null
+  );
+
+  // Query households
+  const householdsQuery = db.useQuery({
+    households: {},
+  });
+
+  // Query menu items for selected household
+  const menuItemsQuery = db.useQuery(
+    selectedHouseholdId
+      ? {
+          menu_items: {
+            $: {
+              where: { household_id: selectedHouseholdId, is_hidden: false },
+            },
+          },
+        }
+      : null
+  );
+
+  // Query menu plans for selected household
+  const menuPlansQuery = db.useQuery(
+    selectedHouseholdId
+      ? {
+          menu_plans: {
+            $: {
+              where: { household_id: selectedHouseholdId },
+            },
+          },
+        }
+      : null
+  );
+
+  // Query all menu votes (we'll filter by menu plan IDs client-side)
+  const votesQuery = db.useQuery({
+    menu_votes: {},
+  });
+
+  const householdMembers = membersQuery.data?.household_members || [];
+  const allHouseholds = householdsQuery.data?.households || [];
+  const menuItems = menuItemsQuery.data?.menu_items || [];
+  const allMenuPlans = menuPlansQuery.data?.menu_plans || [];
+  const allVotes = votesQuery.data?.menu_votes || [];
+
+  // Get votes for menu plans in the selected household
+  const menuPlanIds = new Set(allMenuPlans.map((p: any) => p.id));
+  const relevantVotes = allVotes.filter((v: any) => menuPlanIds.has(v.menu_plan_id));
+
+  const isLoading =
+    membersQuery.isLoading ||
+    householdsQuery.isLoading ||
+    menuItemsQuery.isLoading ||
+    menuPlansQuery.isLoading ||
+    votesQuery.isLoading;
+
+  // Filter households to only those the user is a member of
+  const userHouseholds = householdMembers
+    .map((member: any) => {
+      const household = allHouseholds.find((h: any) => h.id === member.household_id);
+      return household;
+    })
+    .filter((h: any) => h !== undefined);
+
+  // Auto-select first household if none selected and user has households
+  useEffect(() => {
+    if (!selectedHouseholdId && userHouseholds.length > 0 && userHouseholds[0]) {
+      setSelectedHouseholdId(userHouseholds[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedHouseholdId, householdMembers, allHouseholds]);
+
+  // Get menu plan for a specific date and meal type
+  const getMenuPlan = (date: string, mealType: MealType): MenuPlan | undefined => {
+    return allMenuPlans.find(
+      (plan: any) => plan.date === date && plan.meal_type === mealType
+    ) as MenuPlan | undefined;
+  };
+
+  // Get menu item for a menu plan
+  const getMenuItem = (menuItemId: string): MenuItem | undefined => {
+    return menuItems.find((mi: any) => mi.id === menuItemId) as MenuItem | undefined;
+  };
+
+  // Get votes for a menu plan
+  const getVotesForPlan = (menuPlanId: string): MenuVote[] => {
+    return relevantVotes.filter((v: any) => v.menu_plan_id === menuPlanId) as MenuVote[];
+  };
+
+  // Get user's vote for a menu plan
+  const getUserVote = (menuPlanId: string): MenuVote | undefined => {
+    if (!user) return undefined;
+    return relevantVotes.find(
+      (v: any) => v.menu_plan_id === menuPlanId && v.user_id === user.id
+    ) as MenuVote | undefined;
+  };
+
+  // Handle voting on a menu plan
+  const handleVote = async (planId: string, voteValue: VoteValue) => {
+    if (!user) return;
+
+    setError("");
+    setLoading(true);
+
+    try {
+      const existingVote = getUserVote(planId);
+
+      if (existingVote) {
+        // If user already voted the same way, remove the vote
+        if (existingVote.vote === voteValue) {
+          await deleteVote(existingVote.id);
+        } else {
+          // Create new vote with opposite value
+          await createOrUpdateVote({
+            menuPlanId: planId,
+            userId: user.id,
+            vote: voteValue,
+          });
+          // Delete old vote
+          await deleteVote(existingVote.id);
+        }
+      } else {
+        // Create new vote
+        await createOrUpdateVote({
+          menuPlanId: planId,
+          userId: user.id,
+          vote: voteValue,
+        });
+      }
+
+      // Update menu item popularity score
+      const plan = allMenuPlans.find((p: any) => p.id === planId);
+      if (plan) {
+        // Recalculate votes after a brief delay to allow DB to update
+        setTimeout(async () => {
+          const itemPlans = allMenuPlans.filter((p: any) => p.menu_item_id === plan.menu_item_id);
+          let totalScore = 0;
+          
+          // Get fresh votes
+          const freshVotes = allVotes.filter((v: any) => 
+            itemPlans.some((p: any) => p.id === v.menu_plan_id)
+          );
+          
+          // Group votes by menu plan
+          const votesByPlan = new Map<string, MenuVote[]>();
+          freshVotes.forEach((v: any) => {
+            if (!votesByPlan.has(v.menu_plan_id)) {
+              votesByPlan.set(v.menu_plan_id, []);
+            }
+            votesByPlan.get(v.menu_plan_id)!.push(v as MenuVote);
+          });
+          
+          // Calculate total score
+          votesByPlan.forEach((votes) => {
+            totalScore += calculateVoteScore(votes);
+          });
+
+          // Get household to check popularity threshold
+          const household = allHouseholds.find((h: any) => h.id === plan.household_id);
+          const threshold = household?.popularity_threshold ?? -5;
+
+          // Update menu item popularity score and is_hidden based on threshold
+          await updateMenuItem(plan.menu_item_id, {
+            popularity_score: totalScore,
+            is_hidden: totalScore < threshold,
+          });
+        }, 100);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to vote");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Get dates for current week
+  const getWeekDates = (): Date[] => {
+    const dates: Date[] = [];
+    const startOfWeek = new Date(currentDate);
+    const day = startOfWeek.getDay();
+    const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1); // Adjust to Monday
+    startOfWeek.setDate(diff);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(startOfWeek);
+      date.setDate(startOfWeek.getDate() + i);
+      dates.push(date);
+    }
+    return dates;
+  };
+
+  // Get dates for current month
+  const getMonthDates = (): Date[] => {
+    const dates: Date[] = [];
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const startDate = new Date(firstDay);
+    startDate.setDate(startDate.getDate() - startDate.getDay()); // Start from Sunday
+
+    for (let i = 0; i < 42; i++) {
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + i);
+      dates.push(date);
+    }
+    return dates;
+  };
+
+  // Format date to YYYY-MM-DD
+  const formatDate = (date: Date): string => {
+    return date.toISOString().split("T")[0];
+  };
+
+  // Format date for display
+  const formatDateDisplay = (date: Date): string => {
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+
+  // Navigate to previous week/month
+  const navigatePrevious = () => {
+    const newDate = new Date(currentDate);
+    if (viewMode === "week") {
+      newDate.setDate(newDate.getDate() - 7);
+    } else {
+      newDate.setMonth(newDate.getMonth() - 1);
+    }
+    setCurrentDate(newDate);
+  };
+
+  // Navigate to next week/month
+  const navigateNext = () => {
+    const newDate = new Date(currentDate);
+    if (viewMode === "week") {
+      newDate.setDate(newDate.getDate() + 7);
+    } else {
+      newDate.setMonth(newDate.getMonth() + 1);
+    }
+    setCurrentDate(newDate);
+  };
+
+  // Navigate to today
+  const navigateToday = () => {
+    setCurrentDate(new Date());
+  };
+
+  // Open add modal
+  const openAddModal = (date: string, mealType: MealType) => {
+    setSelectedDate(date);
+    setSelectedMealType(mealType);
+    setSelectedMenuItemId("");
+    setEditingPlan(null);
+    setShowAddModal(true);
+  };
+
+  // Open edit modal
+  const openEditModal = (plan: MenuPlan) => {
+    setEditingPlan(plan);
+    setSelectedDate(plan.date);
+    setSelectedMealType(plan.meal_type);
+    setSelectedMenuItemId(plan.menu_item_id);
+    setShowAddModal(true);
+  };
+
+  // Handle create/update menu plan
+  const handleSaveMenuPlan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !selectedHouseholdId) return;
+
+    setError("");
+    setLoading(true);
+
+    try {
+      if (!selectedMenuItemId) {
+        throw new Error("Please select a menu item");
+      }
+
+      if (editingPlan) {
+        await updateMenuPlan(editingPlan.id, {
+          date: selectedDate,
+          menu_item_id: selectedMenuItemId,
+          meal_type: selectedMealType,
+        });
+      } else {
+        await createMenuPlan({
+          householdId: selectedHouseholdId,
+          date: selectedDate,
+          menuItemId: selectedMenuItemId,
+          mealType: selectedMealType,
+          userId: user.id,
+        });
+      }
+
+      setShowAddModal(false);
+      setSelectedDate("");
+      setSelectedMenuItemId("");
+      setEditingPlan(null);
+    } catch (err: any) {
+      setError(err.message || "Failed to save menu plan");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle delete menu plan
+  const handleDeleteMenuPlan = async (planId: string) => {
+    if (!confirm("Are you sure you want to remove this menu item from the calendar?")) return;
+
+    setError("");
+    setLoading(true);
+
+    try {
+      await deleteMenuPlan(planId);
+    } catch (err: any) {
+      setError(err.message || "Failed to delete menu plan");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const mealTypes: MealType[] = ["breakfast", "lunch", "dinner"];
+  const mealTypeLabels: Record<MealType, string> = {
+    breakfast: "Breakfast",
+    lunch: "Lunch",
+    dinner: "Dinner",
+  };
+
+  const menuItemOptions = [
+    { value: "", label: "None - Select a menu item" },
+    ...menuItems.map((mi: any) => ({
+      value: mi.id,
+      label: `${mi.name} (${mi.genre})`,
+    })),
+  ];
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <p className="mt-4 text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (userHouseholds.length === 0) {
+    return (
+      <div className="min-h-screen p-8">
+        <div className="max-w-7xl mx-auto">
+          <h1 className="text-3xl font-bold mb-8 text-primary">Menu Calendar</h1>
+          <Card className="text-center py-12">
+            <p className="text-gray-400 mb-4">You&apos;re not part of any households yet.</p>
+            <p className="text-sm text-gray-500 mb-4">
+              Join or create a household to start planning menus.
+            </p>
+            <Button onClick={() => (window.location.href = "/household")}>
+              Go to Households
+            </Button>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  const dates = viewMode === "week" ? getWeekDates() : getMonthDates();
+  const currentMonthYear = currentDate.toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+  const weekStart = dates[0];
+  const weekEnd = dates[dates.length - 1];
+  const weekRange =
+    viewMode === "week"
+      ? `${formatDateDisplay(weekStart)} - ${formatDateDisplay(weekEnd)}`
+      : currentMonthYear;
+
+  return (
+    <div className="min-h-screen p-8">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-bold text-primary">Menu Calendar</h1>
+          <div className="flex gap-4 items-center">
+            <div className="flex gap-2">
+              <Button
+                variant={viewMode === "week" ? "primary" : "outline"}
+                size="sm"
+                onClick={() => setViewMode("week")}
+              >
+                Week
+              </Button>
+              <Button
+                variant={viewMode === "month" ? "primary" : "outline"}
+                size="sm"
+                onClick={() => setViewMode("month")}
+              >
+                Month
+              </Button>
+            </div>
+            {userHouseholds.length > 1 && (
+              <select
+                value={selectedHouseholdId || ""}
+                onChange={(e) => setSelectedHouseholdId(e.target.value)}
+                className="px-4 py-2 bg-secondary-light border border-secondary-lighter rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                {userHouseholds.map((household: any) => (
+                  <option key={household.id} value={household.id}>
+                    {household.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
+
+        {error && (
+          <div className="mb-4 bg-red-500/10 border border-red-500 text-red-500 rounded-lg p-3 text-sm">
+            {error}
+          </div>
+        )}
+
+        {/* Calendar Navigation */}
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={navigatePrevious}>
+              ← Previous
+            </Button>
+            <Button variant="outline" size="sm" onClick={navigateToday}>
+              Today
+            </Button>
+            <Button variant="outline" size="sm" onClick={navigateNext}>
+              Next →
+            </Button>
+          </div>
+          <h2 className="text-2xl font-semibold">{weekRange}</h2>
+        </div>
+
+        {/* Calendar Grid */}
+        <div className="overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
+          {viewMode === "week" ? (
+            <WeekView
+              dates={dates}
+              mealTypes={mealTypes}
+              mealTypeLabels={mealTypeLabels}
+              getMenuPlan={getMenuPlan}
+              getMenuItem={getMenuItem}
+              getVotesForPlan={getVotesForPlan}
+              getUserVote={getUserVote}
+              handleVote={handleVote}
+              openAddModal={openAddModal}
+              openEditModal={openEditModal}
+              handleDeleteMenuPlan={handleDeleteMenuPlan}
+              formatDate={formatDate}
+              formatDateDisplay={formatDateDisplay}
+              loading={loading}
+            />
+          ) : (
+            <MonthView
+              dates={dates}
+              mealTypes={mealTypes}
+              mealTypeLabels={mealTypeLabels}
+              getMenuPlan={getMenuPlan}
+              getMenuItem={getMenuItem}
+              getVotesForPlan={getVotesForPlan}
+              openAddModal={openAddModal}
+              openEditModal={openEditModal}
+              handleDeleteMenuPlan={handleDeleteMenuPlan}
+              formatDate={formatDate}
+              formatDateDisplay={formatDateDisplay}
+              currentDate={currentDate}
+            />
+          )}
+        </div>
+
+        {/* Add/Edit Modal */}
+        {showAddModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <Card className="w-full max-w-md m-4">
+              <h2 className="text-xl font-semibold mb-4">
+                {editingPlan ? "Edit Menu Plan" : "Add Menu Item"}
+              </h2>
+              <form onSubmit={handleSaveMenuPlan}>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground">
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => setSelectedDate(e.target.value)}
+                      className="w-full px-4 py-2 bg-secondary-light border border-secondary-lighter rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                      required
+                    />
+                  </div>
+                  <Select
+                    label="Meal Type"
+                    value={selectedMealType}
+                    onChange={(e) => setSelectedMealType(e.target.value as MealType)}
+                    options={mealTypes.map((mt) => ({
+                      value: mt,
+                      label: mealTypeLabels[mt],
+                    }))}
+                    required
+                  />
+                  {menuItems.length > 0 ? (
+                    <Select
+                      label="Menu Item"
+                      value={selectedMenuItemId}
+                      onChange={(e) => setSelectedMenuItemId(e.target.value)}
+                      options={menuItemOptions}
+                      required
+                    />
+                  ) : (
+                    <div className="text-sm text-gray-400 text-center py-4">
+                      No menu items available.{" "}
+                      <a href="/menu" className="text-primary hover:underline">
+                        Create menu items first
+                      </a>
+                      .
+                    </div>
+                  )}
+                  <div className="flex gap-4">
+                    <Button type="submit" disabled={loading || menuItems.length === 0}>
+                      {editingPlan ? "Update" : "Add"} Menu Item
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setShowAddModal(false);
+                        setEditingPlan(null);
+                        setSelectedDate("");
+                        setSelectedMenuItemId("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              </form>
+            </Card>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Week View Component
+function WeekView({
+  dates,
+  mealTypes,
+  mealTypeLabels,
+  getMenuPlan,
+  getMenuItem,
+  getVotesForPlan,
+  getUserVote,
+  handleVote,
+  openAddModal,
+  openEditModal,
+  handleDeleteMenuPlan,
+  formatDate,
+  formatDateDisplay,
+  loading,
+}: {
+  dates: Date[];
+  mealTypes: MealType[];
+  mealTypeLabels: Record<MealType, string>;
+  getMenuPlan: (date: string, mealType: MealType) => MenuPlan | undefined;
+  getMenuItem: (menuItemId: string) => MenuItem | undefined;
+  getVotesForPlan: (menuPlanId: string) => MenuVote[];
+  getUserVote: (menuPlanId: string) => MenuVote | undefined;
+  handleVote: (planId: string, vote: VoteValue) => Promise<void>;
+  openAddModal: (date: string, mealType: MealType) => void;
+  openEditModal: (plan: MenuPlan) => void;
+  handleDeleteMenuPlan: (planId: string) => void;
+  formatDate: (date: Date) => string;
+  formatDateDisplay: (date: Date) => string;
+  loading: boolean;
+}) {
+  const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  return (
+    <div className="border border-secondary-lighter rounded-lg overflow-hidden">
+      <div className="grid grid-cols-8 bg-secondary-light">
+        <div className="p-2 md:p-4 border-r border-secondary-lighter font-semibold text-xs md:text-base">Meal</div>
+        {dates.map((date, idx) => {
+          // Get day of week (0 = Sunday, 6 = Saturday)
+          // Adjust to Monday = 0
+          const dayIndex = date.getDay() === 0 ? 6 : date.getDay() - 1;
+          return (
+            <div
+              key={idx}
+              className="p-2 md:p-4 border-r border-secondary-lighter text-center font-semibold last:border-r-0 text-xs md:text-base"
+            >
+              <div className="hidden md:block">{dayNames[dayIndex]}</div>
+              <div className="md:hidden">{dayNames[dayIndex].charAt(0)}</div>
+              <div className="text-xs text-gray-400 hidden md:block">{formatDateDisplay(date)}</div>
+            </div>
+          );
+        })}
+      </div>
+      {mealTypes.map((mealType) => (
+        <div key={mealType} className="grid grid-cols-8 border-t border-secondary-lighter">
+          <div className="p-2 md:p-4 border-r border-secondary-lighter bg-secondary-light font-medium text-xs md:text-base">
+            <span className="hidden md:inline">{mealTypeLabels[mealType]}</span>
+            <span className="md:hidden">{mealTypeLabels[mealType].charAt(0)}</span>
+          </div>
+          {dates.map((date, idx) => {
+            const dateStr = formatDate(date);
+            const plan = getMenuPlan(dateStr, mealType);
+            const menuItem = plan ? getMenuItem(plan.menu_item_id) : null;
+
+            return (
+              <div
+                key={idx}
+                className="p-1 md:p-2 border-r border-secondary-lighter last:border-r-0 min-h-[80px] md:min-h-[100px] hover:bg-secondary-light/50 transition-colors"
+              >
+                {plan && menuItem ? (
+                  <div className="group">
+                    <Card className="p-1.5 md:p-2">
+                      <div className="flex justify-between items-start mb-1.5 md:mb-2">
+                        <div 
+                          className="flex-1 cursor-pointer"
+                          onClick={() => openEditModal(plan)}
+                        >
+                          <p className="font-medium text-xs md:text-sm truncate">{menuItem.name}</p>
+                          <p className="text-xs text-gray-400 hidden md:block">{menuItem.genre}</p>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteMenuPlan(plan.id);
+                          }}
+                          className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-red-500 text-sm md:text-xs touch-manipulation"
+                          aria-label="Delete"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      
+                      {/* Voting UI - Touch-friendly */}
+                      <div className="flex items-center gap-1.5 md:gap-1" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => handleVote(plan.id, 1)}
+                          disabled={loading}
+                          className={`flex items-center justify-center gap-1 px-2.5 py-2 md:px-2 md:py-1 rounded text-sm md:text-xs transition-colors touch-manipulation min-w-[36px] md:min-w-0 ${
+                            getUserVote(plan.id)?.vote === 1
+                              ? "bg-green-500/20 text-green-400"
+                              : "bg-secondary-lighter hover:bg-secondary-light active:bg-secondary-light text-gray-400"
+                          }`}
+                          title="Upvote"
+                          aria-label="Upvote"
+                        >
+                          <span>▲</span>
+                        </button>
+                        <span className="text-xs text-gray-400 min-w-[24px] md:min-w-[20px] text-center font-medium">
+                          {calculateVoteScore(getVotesForPlan(plan.id))}
+                        </span>
+                        <button
+                          onClick={() => handleVote(plan.id, -1)}
+                          disabled={loading}
+                          className={`flex items-center justify-center gap-1 px-2.5 py-2 md:px-2 md:py-1 rounded text-sm md:text-xs transition-colors touch-manipulation min-w-[36px] md:min-w-0 ${
+                            getUserVote(plan.id)?.vote === -1
+                              ? "bg-red-500/20 text-red-400"
+                              : "bg-secondary-lighter hover:bg-secondary-light active:bg-secondary-light text-gray-400"
+                          }`}
+                          title="Downvote"
+                          aria-label="Downvote"
+                        >
+                          <span>▼</span>
+                        </button>
+                      </div>
+                    </Card>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => openAddModal(dateStr, mealType)}
+                    className="w-full h-full text-gray-500 hover:text-primary hover:bg-secondary-light/50 active:bg-secondary-light rounded transition-colors text-xs md:text-sm touch-manipulation py-2"
+                  >
+                    + Add
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Month View Component
+function MonthView({
+  dates,
+  mealTypes,
+  mealTypeLabels,
+  getMenuPlan,
+  getMenuItem,
+  getVotesForPlan,
+  openAddModal,
+  openEditModal,
+  handleDeleteMenuPlan,
+  formatDate,
+  formatDateDisplay,
+  currentDate,
+}: {
+  dates: Date[];
+  mealTypes: MealType[];
+  mealTypeLabels: Record<MealType, string>;
+  getMenuPlan: (date: string, mealType: MealType) => MenuPlan | undefined;
+  getMenuItem: (menuItemId: string) => MenuItem | undefined;
+  getVotesForPlan: (menuPlanId: string) => MenuVote[];
+  openAddModal: (date: string, mealType: MealType) => void;
+  openEditModal: (plan: MenuPlan) => void;
+  handleDeleteMenuPlan: (planId: string) => void;
+  formatDate: (date: Date) => string;
+  formatDateDisplay: (date: Date) => string;
+  currentDate: Date;
+}) {
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const currentMonth = currentDate.getMonth();
+  const currentYear = currentDate.getFullYear();
+
+  return (
+    <div className="border border-secondary-lighter rounded-lg overflow-hidden">
+      {/* Day headers */}
+      <div className="grid grid-cols-7 bg-secondary-light">
+        {dayNames.map((day) => (
+          <div key={day} className="p-4 text-center font-semibold border-r border-secondary-lighter last:border-r-0">
+            {day}
+          </div>
+        ))}
+      </div>
+      {/* Calendar grid */}
+      <div className="grid grid-cols-7">
+        {dates.map((date, idx) => {
+          const isCurrentMonth = date.getMonth() === currentMonth;
+          const dateStr = formatDate(date);
+          const plans = mealTypes.map((mt) => getMenuPlan(dateStr, mt)).filter(Boolean) as MenuPlan[];
+
+          return (
+            <div
+              key={idx}
+              className={`min-h-[120px] border-r border-b border-secondary-lighter p-2 ${
+                !isCurrentMonth ? "bg-secondary-lighter/30 opacity-50" : ""
+              }`}
+            >
+              <div className="text-sm font-medium mb-1">{date.getDate()}</div>
+              <div className="space-y-1">
+                {plans.map((plan) => {
+                  const menuItem = getMenuItem(plan.menu_item_id);
+                  if (!menuItem) return null;
+                  const voteScore = calculateVoteScore(getVotesForPlan(plan.id));
+                  return (
+                    <div
+                      key={plan.id}
+                      className="text-xs p-1 bg-primary/20 text-primary rounded cursor-pointer hover:bg-primary/30 flex items-center justify-between gap-1"
+                      onClick={() => openEditModal(plan)}
+                    >
+                      <span className="flex-1 truncate">
+                        {mealTypeLabels[plan.meal_type]}: {menuItem.name}
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-xs font-medium flex-shrink-0 ${
+                          voteScore > 0
+                            ? "bg-green-500/20 text-green-400"
+                            : voteScore < 0
+                            ? "bg-red-500/20 text-red-400"
+                            : "bg-gray-500/20 text-gray-400"
+                        }`}
+                        title={`Vote score: ${voteScore}`}
+                      >
+                        {voteScore > 0 ? "+" : ""}
+                        {voteScore}
+                      </span>
+                    </div>
+                  );
+                })}
+                {plans.length < 3 && (
+                  <button
+                    onClick={() => {
+                      // Find first available meal type
+                      const availableMealType = mealTypes.find(
+                        (mt) => !getMenuPlan(dateStr, mt)
+                      ) || mealTypes[0];
+                      openAddModal(dateStr, availableMealType);
+                    }}
+                    className="text-xs text-gray-500 hover:text-primary"
+                  >
+                    + Add
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
