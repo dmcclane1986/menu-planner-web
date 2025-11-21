@@ -44,6 +44,20 @@ export const schema = {
     popularity_score: { type: "number", default: 0 },
     is_hidden: { type: "boolean", default: false },
   },
+  sides: {
+    id: { type: "string" },
+    household_id: { type: "string" },
+    name: { type: "string" },
+    created_by: { type: "string" },
+    created_at: { type: "number" },
+    is_hidden: { type: "boolean", default: false },
+  },
+  entree_sides: {
+    id: { type: "string" },
+    entree_id: { type: "string" }, // menu_item_id (entree)
+    side_id: { type: "string" },
+    created_at: { type: "number" },
+  },
   recipes: {
     id: { type: "string" },
     menu_item_id: { type: "string" },
@@ -66,6 +80,7 @@ export const schema = {
     date: { type: "string" }, // ISO date string (YYYY-MM-DD)
     menu_item_id: { type: "string" },
     meal_type: { type: "string" }, // "breakfast" | "lunch" | "dinner"
+    side_id: { type: "string" }, // Optional: side associated with this menu plan
     created_by: { type: "string" },
     created_at: { type: "number" },
   },

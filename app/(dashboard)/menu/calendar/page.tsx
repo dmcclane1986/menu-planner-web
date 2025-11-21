@@ -29,6 +29,7 @@ function MenuCalendarContent() {
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [selectedMealType, setSelectedMealType] = useState<MealType>("dinner");
   const [selectedMenuItemId, setSelectedMenuItemId] = useState("");
+  const [selectedSideId, setSelectedSideId] = useState("");
   const [editingPlan, setEditingPlan] = useState<MenuPlan | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -82,11 +83,31 @@ function MenuCalendarContent() {
     menu_votes: {},
   });
 
+  // Query sides for selected household
+  const sidesQuery = db.useQuery(
+    selectedHouseholdId
+      ? {
+          sides: {
+            $: {
+              where: { household_id: selectedHouseholdId, is_hidden: false },
+            },
+          },
+        }
+      : null
+  );
+
+  // Query entree_sides relationships
+  const entreeSidesQuery = db.useQuery({
+    entree_sides: {},
+  });
+
   const householdMembers = membersQuery.data?.household_members || [];
   const allHouseholds = householdsQuery.data?.households || [];
   const menuItems = menuItemsQuery.data?.menu_items || [];
   const allMenuPlans = menuPlansQuery.data?.menu_plans || [];
   const allVotes = votesQuery.data?.menu_votes || [];
+  const allSides = sidesQuery.data?.sides || [];
+  const allEntreeSides = entreeSidesQuery.data?.entree_sides || [];
 
   // Get votes for menu plans in the selected household
   const menuPlanIds = new Set(allMenuPlans.map((p: any) => p.id));
@@ -97,7 +118,9 @@ function MenuCalendarContent() {
     householdsQuery.isLoading ||
     menuItemsQuery.isLoading ||
     menuPlansQuery.isLoading ||
-    votesQuery.isLoading;
+    votesQuery.isLoading ||
+    sidesQuery.isLoading ||
+    entreeSidesQuery.isLoading;
 
   // Filter households to only those the user is a member of
   const userHouseholds = householdMembers
@@ -125,6 +148,21 @@ function MenuCalendarContent() {
   // Get menu item for a menu plan
   const getMenuItem = (menuItemId: string): MenuItem | undefined => {
     return menuItems.find((mi: any) => mi.id === menuItemId) as MenuItem | undefined;
+  };
+
+  // Get side for a menu plan
+  const getSide = (sideId: string | undefined) => {
+    if (!sideId) return undefined;
+    return allSides.find((s: any) => s.id === sideId);
+  };
+
+  // Get available sides for a menu item
+  const getAvailableSidesForMenuItem = (menuItemId: string) => {
+    if (!menuItemId) return [];
+    const entreeSideIds = allEntreeSides
+      .filter((es: any) => es.entree_id === menuItemId)
+      .map((es: any) => es.side_id);
+    return allSides.filter((s: any) => entreeSideIds.includes(s.id));
   };
 
   // Get votes for a menu plan
@@ -295,6 +333,7 @@ function MenuCalendarContent() {
     setSelectedDate(date);
     setSelectedMealType(mealType);
     setSelectedMenuItemId("");
+    setSelectedSideId("");
     setEditingPlan(null);
     setShowAddModal(true);
   };
@@ -305,6 +344,7 @@ function MenuCalendarContent() {
     setSelectedDate(plan.date);
     setSelectedMealType(plan.meal_type);
     setSelectedMenuItemId(plan.menu_item_id);
+    setSelectedSideId(plan.side_id || "");
     setShowAddModal(true);
   };
 
@@ -326,6 +366,7 @@ function MenuCalendarContent() {
           date: selectedDate,
           menu_item_id: selectedMenuItemId,
           meal_type: selectedMealType,
+          side_id: selectedSideId || undefined,
         });
       } else {
         await createMenuPlan({
@@ -334,12 +375,14 @@ function MenuCalendarContent() {
           menuItemId: selectedMenuItemId,
           mealType: selectedMealType,
           userId: user.id,
+          sideId: selectedSideId || undefined,
         });
       }
 
       setShowAddModal(false);
       setSelectedDate("");
       setSelectedMenuItemId("");
+      setSelectedSideId("");
       setEditingPlan(null);
     } catch (err: any) {
       setError(err.message || "Failed to save menu plan");
@@ -490,6 +533,7 @@ function MenuCalendarContent() {
               mealTypeLabels={mealTypeLabels}
               getMenuPlan={getMenuPlan}
               getMenuItem={getMenuItem}
+              getSide={getSide}
               getVotesForPlan={getVotesForPlan}
               getUserVote={getUserVote}
               handleVote={handleVote}
@@ -507,6 +551,7 @@ function MenuCalendarContent() {
               mealTypeLabels={mealTypeLabels}
               getMenuPlan={getMenuPlan}
               getMenuItem={getMenuItem}
+              getSide={getSide}
               getVotesForPlan={getVotesForPlan}
               openAddModal={openAddModal}
               openEditModal={openEditModal}
@@ -527,6 +572,7 @@ function MenuCalendarContent() {
               mealTypeLabels={mealTypeLabels}
               getMenuPlan={getMenuPlan}
               getMenuItem={getMenuItem}
+              getSide={getSide}
               getVotesForPlan={getVotesForPlan}
               getUserVote={getUserVote}
               handleVote={handleVote}
@@ -549,6 +595,7 @@ function MenuCalendarContent() {
               mealTypeLabels={mealTypeLabels}
               getMenuPlan={getMenuPlan}
               getMenuItem={getMenuItem}
+              getSide={getSide}
               getVotesForPlan={getVotesForPlan}
               openAddModal={openAddModal}
               openEditModal={openEditModal}
@@ -592,13 +639,40 @@ function MenuCalendarContent() {
                     required
                   />
                   {menuItems.length > 0 ? (
-                    <Select
-                      label="Menu Item"
-                      value={selectedMenuItemId}
-                      onChange={(e) => setSelectedMenuItemId(e.target.value)}
-                      options={menuItemOptions}
-                      required
-                    />
+                    <>
+                      <Select
+                        label="Menu Item"
+                        value={selectedMenuItemId}
+                        onChange={(e) => {
+                          setSelectedMenuItemId(e.target.value);
+                          // Reset side selection when menu item changes
+                          setSelectedSideId("");
+                        }}
+                        options={menuItemOptions}
+                        required
+                      />
+                      {selectedMenuItemId && (() => {
+                        const availableSides = getAvailableSidesForMenuItem(selectedMenuItemId);
+                        if (availableSides.length > 0) {
+                          const sideOptions = [
+                            { value: "", label: "None - No side" },
+                            ...availableSides.map((side: any) => ({
+                              value: side.id,
+                              label: side.name,
+                            })),
+                          ];
+                          return (
+                            <Select
+                              label="Side (Optional)"
+                              value={selectedSideId}
+                              onChange={(e) => setSelectedSideId(e.target.value)}
+                              options={sideOptions}
+                            />
+                          );
+                        }
+                        return null;
+                      })()}
+                    </>
                   ) : (
                     <div className="text-sm text-gray-400 text-center py-4">
                       No menu items available.{" "}
@@ -642,6 +716,7 @@ function WeekSlideView({
   mealTypeLabels,
   getMenuPlan,
   getMenuItem,
+  getSide,
   getVotesForPlan,
   getUserVote,
   handleVote,
@@ -657,6 +732,7 @@ function WeekSlideView({
   mealTypeLabels: Record<MealType, string>;
   getMenuPlan: (date: string, mealType: MealType) => MenuPlan | undefined;
   getMenuItem: (menuItemId: string) => MenuItem | undefined;
+  getSide: (sideId: string | undefined) => any;
   getVotesForPlan: (menuPlanId: string) => MenuVote[];
   getUserVote: (menuPlanId: string) => MenuVote | undefined;
   handleVote: (planId: string, vote: VoteValue) => Promise<void>;
@@ -769,6 +845,9 @@ function WeekSlideView({
                         <div className="flex-1">
                           <p className="font-medium text-base mb-1">{menuItem.name}</p>
                           <p className="text-sm text-gray-400">{menuItem.genre}</p>
+                          {plan.side_id && getSide(plan.side_id) && (
+                            <p className="text-xs text-primary mt-1">Side: {getSide(plan.side_id).name}</p>
+                          )}
                         </div>
                         <button
                           onClick={(e) => {
@@ -852,6 +931,7 @@ function WeekView({
   mealTypeLabels,
   getMenuPlan,
   getMenuItem,
+  getSide,
   getVotesForPlan,
   getUserVote,
   handleVote,
@@ -867,6 +947,7 @@ function WeekView({
   mealTypeLabels: Record<MealType, string>;
   getMenuPlan: (date: string, mealType: MealType) => MenuPlan | undefined;
   getMenuItem: (menuItemId: string) => MenuItem | undefined;
+  getSide: (sideId: string | undefined) => any;
   getVotesForPlan: (menuPlanId: string) => MenuVote[];
   getUserVote: (menuPlanId: string) => MenuVote | undefined;
   handleVote: (planId: string, vote: VoteValue) => Promise<void>;
@@ -925,6 +1006,9 @@ function WeekView({
                         >
                           <p className="font-medium text-sm sm:text-xs md:text-sm truncate leading-snug mb-0.5">{menuItem.name}</p>
                           <p className="text-xs sm:text-xs text-gray-400 hidden sm:block">{menuItem.genre}</p>
+                          {plan.side_id && getSide(plan.side_id) && (
+                            <p className="text-xs text-primary mt-0.5 hidden sm:block">Side: {getSide(plan.side_id).name}</p>
+                          )}
                         </div>
                         <button
                           onClick={(e) => {
@@ -996,6 +1080,7 @@ function MonthView({
   mealTypeLabels,
   getMenuPlan,
   getMenuItem,
+  getSide,
   getVotesForPlan,
   openAddModal,
   openEditModal,
@@ -1009,6 +1094,7 @@ function MonthView({
   mealTypeLabels: Record<MealType, string>;
   getMenuPlan: (date: string, mealType: MealType) => MenuPlan | undefined;
   getMenuItem: (menuItemId: string) => MenuItem | undefined;
+  getSide: (sideId: string | undefined) => any;
   getVotesForPlan: (menuPlanId: string) => MenuVote[];
   openAddModal: (date: string, mealType: MealType) => void;
   openEditModal: (plan: MenuPlan) => void;
@@ -1059,6 +1145,7 @@ function MonthView({
                     >
                       <span className="flex-1 truncate">
                         {mealTypeLabels[plan.meal_type]}: {menuItem.name}
+                        {plan.side_id && getSide(plan.side_id) && ` + ${getSide(plan.side_id).name}`}
                       </span>
                       <span
                         className={`px-1.5 py-0.5 rounded text-xs font-medium flex-shrink-0 ${

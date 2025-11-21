@@ -143,6 +143,19 @@ function ShoppingListContent() {
     recipe_ingredients: {},
   });
 
+  // Query sides for selected household
+  const sidesQuery = db.useQuery(
+    selectedHouseholdId
+      ? {
+          sides: {
+            $: {
+              where: { household_id: selectedHouseholdId, is_hidden: false },
+            },
+          },
+        }
+      : null
+  );
+
   const householdMembers = membersQuery.data?.household_members || [];
   const allHouseholds = householdsQuery.data?.households || [];
   const shoppingLists = shoppingListsQuery.data?.shopping_lists || [];
@@ -150,6 +163,7 @@ function ShoppingListContent() {
   const allMenuPlans = menuPlansQuery.data?.menu_plans || [];
   const allRecipes = recipesQuery.data?.recipes || [];
   const allRecipeIngredients = recipeIngredientsQuery.data?.recipe_ingredients || [];
+  const allSides = sidesQuery.data?.sides || [];
   const currentHouseholdMembers = householdMembersQuery.data?.household_members || [];
   const templates = templatesQuery.data?.shopping_list_templates || [];
 
@@ -161,6 +175,7 @@ function ShoppingListContent() {
     menuPlansQuery.isLoading ||
     recipesQuery.isLoading ||
     recipeIngredientsQuery.isLoading ||
+    sidesQuery.isLoading ||
     templatesQuery.isLoading ||
     householdMembersQuery.isLoading;
 
@@ -329,8 +344,49 @@ function ShoppingListContent() {
       console.log("Ingredients after aggregation:", aggregated.length, "items");
       console.log("Aggregated ingredients:", aggregated);
 
-      if (aggregated.length === 0) {
-        setError("No valid ingredients to add to shopping list.");
+      // Count sides from menu plans
+      const sideCounts = new Map<string, number>();
+      weekMenuPlans.forEach((plan: any) => {
+        if (plan.side_id) {
+          const currentCount = sideCounts.get(plan.side_id) || 0;
+          sideCounts.set(plan.side_id, currentCount + 1);
+        }
+      });
+
+      console.log("Side counts:", Array.from(sideCounts.entries()));
+
+      // Prepare shopping items from ingredients
+      const shoppingItemsFromIngredients = aggregated.map((ing) => ({
+        ingredient_name: ing.name,
+        quantity: ing.quantity,
+        unit: ing.unit,
+        checked: false,
+        added_manually: false,
+      }));
+
+      // Add sides to shopping list with count
+      const shoppingItemsFromSides = Array.from(sideCounts.entries()).map(([sideId, count]) => {
+        const side = allSides.find((s: any) => s.id === sideId);
+        if (!side) return null;
+        return {
+          ingredient_name: `${count} ${side.name}`,
+          quantity: 0,
+          unit: "",
+          checked: false,
+          added_manually: false,
+        };
+      }).filter(Boolean) as Array<{
+        ingredient_name: string;
+        quantity: number;
+        unit: string;
+        checked: boolean;
+        added_manually: boolean;
+      }>;
+
+      const allShoppingItems = [...shoppingItemsFromIngredients, ...shoppingItemsFromSides];
+
+      if (allShoppingItems.length === 0) {
+        setError("No valid ingredients or sides to add to shopping list.");
         setLoading(false);
         return;
       }
@@ -347,16 +403,10 @@ function ShoppingListContent() {
       // Create shopping items
       await createShoppingItems(
         shoppingListId,
-        aggregated.map((ing) => ({
-          ingredient_name: ing.name,
-          quantity: ing.quantity,
-          unit: ing.unit,
-          checked: false,
-          added_manually: false,
-        }))
+        allShoppingItems
       );
 
-      console.log("Created", aggregated.length, "shopping items");
+      console.log("Created", allShoppingItems.length, "shopping items");
       console.log("=== Generation Complete ===");
 
       setSelectedListId(shoppingListId);

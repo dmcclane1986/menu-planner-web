@@ -52,16 +52,22 @@ export default function DashboardLayout({
                   Households
                 </Link>
                 <Link
+                  href="/menu"
+                  className="text-gray-300 hover:text-primary active:text-primary px-2 md:px-3 py-2 rounded-md text-xs md:text-sm font-medium transition-colors whitespace-nowrap touch-manipulation"
+                >
+                  Entrees
+                </Link>
+                <Link
+                  href="/sides"
+                  className="text-gray-300 hover:text-primary active:text-primary px-2 md:px-3 py-2 rounded-md text-xs md:text-sm font-medium transition-colors whitespace-nowrap touch-manipulation"
+                >
+                  Sides
+                </Link>
+                <Link
                   href="/recipes"
                   className="text-gray-300 hover:text-primary active:text-primary px-2 md:px-3 py-2 rounded-md text-xs md:text-sm font-medium transition-colors whitespace-nowrap touch-manipulation"
                 >
                   Recipes
-                </Link>
-                <Link
-                  href="/menu"
-                  className="text-gray-300 hover:text-primary active:text-primary px-2 md:px-3 py-2 rounded-md text-xs md:text-sm font-medium transition-colors whitespace-nowrap touch-manipulation"
-                >
-                  Menu Items
                 </Link>
                 <Link
                   href="/menu/calendar"

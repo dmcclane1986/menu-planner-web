@@ -11,12 +11,13 @@ import {
   deleteRecipeIngredients,
   createRecipeIngredients,
 } from "@/lib/utils/recipes";
+import { assignSideToEntree, removeSideFromEntree } from "@/lib/utils/entreeSides";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Select } from "@/components/ui/Select";
 import { Card } from "@/components/ui/Card";
-import type { Recipe, RecipeIngredient, MenuItem } from "@/types";
+import type { Recipe, RecipeIngredient, MenuItem, Side, EntreeSide } from "@/types";
 
 interface IngredientForm {
   name: string;
@@ -48,6 +49,7 @@ function RecipesContent() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [menuItemFilter, setMenuItemFilter] = useState<string>("");
+  const [selectedSides, setSelectedSides] = useState<string[]>([]);
 
   // Query household members for this user
   const membersQuery = db.useQuery(
@@ -90,6 +92,24 @@ function RecipesContent() {
     recipe_ingredients: {},
   });
 
+  // Query sides for selected household
+  const sidesQuery = db.useQuery(
+    selectedHouseholdId
+      ? {
+          sides: {
+            $: {
+              where: { household_id: selectedHouseholdId, is_hidden: false },
+            },
+          },
+        }
+      : null
+  );
+
+  // Query entree_sides relationships
+  const entreeSidesQuery = db.useQuery({
+    entree_sides: {},
+  });
+
   // Filter recipes and ingredients for selected household's menu items
   const menuItems = menuItemsQuery.data?.menu_items || [];
   const menuItemIds = new Set(menuItems.map((mi: any) => mi.id));
@@ -114,7 +134,12 @@ function RecipesContent() {
     householdsQuery.isLoading ||
     menuItemsQuery.isLoading ||
     recipesQuery.isLoading ||
-    ingredientsQuery.isLoading;
+    ingredientsQuery.isLoading ||
+    sidesQuery.isLoading ||
+    entreeSidesQuery.isLoading;
+
+  const allSides = sidesQuery.data?.sides || [];
+  const allEntreeSides = entreeSidesQuery.data?.entree_sides || [];
 
   // Filter households to only those the user is a member of
   const userHouseholds = householdMembers
@@ -140,6 +165,19 @@ function RecipesContent() {
   // Get menu item for a recipe
   const getRecipeMenuItem = (menuItemId: string): MenuItem | undefined => {
     return menuItems.find((mi: any) => mi.id === menuItemId) as MenuItem | undefined;
+  };
+
+  // Get sides for an entree
+  const getEntreeSides = (entreeId: string): Side[] => {
+    const entreeSideIds = allEntreeSides
+      .filter((es: any) => es.entree_id === entreeId)
+      .map((es: any) => es.side_id);
+    return allSides.filter((side: any) => entreeSideIds.includes(side.id)) as Side[];
+  };
+
+  // Get entree_sides IDs for an entree
+  const getEntreeSideIds = (entreeId: string): EntreeSide[] => {
+    return allEntreeSides.filter((es: any) => es.entree_id === entreeId) as EntreeSide[];
   };
 
   const addIngredient = () => {
@@ -169,7 +207,7 @@ function RecipesContent() {
       );
 
       if (!menuItemId) {
-        throw new Error("Please select a menu item");
+        throw new Error("Please select an entree");
       }
 
       if (validIngredients.length === 0) {
@@ -189,6 +227,13 @@ function RecipesContent() {
         })),
       });
 
+      // Assign sides to entree
+      if (selectedSides.length > 0) {
+        for (const sideId of selectedSides) {
+          await assignSideToEntree(menuItemId, sideId);
+        }
+      }
+
       // Reset form
       setMenuItemId("");
       setInstructions("");
@@ -196,6 +241,7 @@ function RecipesContent() {
       setCookTime("");
       setServings("");
       setIngredients([{ name: "", quantity: 0, unit: "" }]);
+      setSelectedSides([]);
       setShowCreateForm(false);
     } catch (err: any) {
       setError(err.message || "Failed to create recipe");
@@ -217,7 +263,7 @@ function RecipesContent() {
       );
 
       if (!menuItemId) {
-        throw new Error("Please select a menu item");
+        throw new Error("Please select an entree");
       }
 
       if (validIngredients.length === 0) {
@@ -247,6 +293,24 @@ function RecipesContent() {
         }))
       );
 
+      // Update side assignments
+      const currentEntreeSides = getEntreeSideIds(menuItemId);
+      const currentSideIds = currentEntreeSides.map((es) => es.side_id);
+      
+      // Remove sides that are no longer selected
+      for (const entreeSide of currentEntreeSides) {
+        if (!selectedSides.includes(entreeSide.side_id)) {
+          await removeSideFromEntree(entreeSide.id);
+        }
+      }
+      
+      // Add new sides
+      for (const sideId of selectedSides) {
+        if (!currentSideIds.includes(sideId)) {
+          await assignSideToEntree(menuItemId, sideId);
+        }
+      }
+
       // Reset form
       setEditingRecipe(null);
       setMenuItemId("");
@@ -255,6 +319,7 @@ function RecipesContent() {
       setCookTime("");
       setServings("");
       setIngredients([{ name: "", quantity: 0, unit: "" }]);
+      setSelectedSides([]);
     } catch (err: any) {
       setError(err.message || "Failed to update recipe");
     } finally {
@@ -305,6 +370,10 @@ function RecipesContent() {
       setIngredients([{ name: "", quantity: 0, unit: "" }]);
     }
 
+    // Load assigned sides for this entree
+    const assignedSides = getEntreeSides(recipe.menu_item_id);
+    setSelectedSides(assignedSides.map((side) => side.id));
+
     setShowCreateForm(false);
   };
 
@@ -316,6 +385,7 @@ function RecipesContent() {
     setCookTime("");
     setServings("");
     setIngredients([{ name: "", quantity: 0, unit: "" }]);
+    setSelectedSides([]);
   };
 
   if (isLoading) {
@@ -349,7 +419,7 @@ function RecipesContent() {
   }
 
   const menuItemOptions = [
-    { value: "", label: "None - Select a menu item" },
+    { value: "", label: "None - Select an entree" },
     ...menuItems.map((mi: any) => ({
       value: mi.id,
       label: `${mi.name} (${mi.genre})`,
@@ -391,13 +461,13 @@ function RecipesContent() {
         {menuItems.length > 0 && (
           <Card className="mb-6">
             <label className="block text-sm font-medium mb-2 text-foreground">
-              Filter by Menu Item
+              Filter by Entree
             </label>
             <Select
               value={menuItemFilter}
               onChange={(e) => setMenuItemFilter(e.target.value)}
               options={[
-                { value: "", label: "All Menu Items" },
+                { value: "", label: "All Entrees" },
                 ...menuItems.map((mi: any) => ({
                   value: mi.id,
                   label: `${mi.name} (${mi.genre})`,
@@ -433,6 +503,7 @@ function RecipesContent() {
               setCookTime("");
               setServings("");
               setIngredients([{ name: "", quantity: 0, unit: "" }]);
+              setSelectedSides([]);
             }}
             className="mb-6"
             disabled={menuItems.length === 0}
@@ -444,10 +515,10 @@ function RecipesContent() {
         {menuItems.length === 0 && !showCreateForm && !editingRecipe && (
           <Card className="mb-6">
             <p className="text-gray-400 text-center py-4">
-              No menu items available. Please create menu items first.
+              No entrees available. Please create entrees first.
             </p>
             <Button onClick={() => (window.location.href = "/menu")} className="mx-auto block">
-              Go to Menu Items
+              Go to Entrees
             </Button>
           </Card>
         )}
@@ -460,9 +531,18 @@ function RecipesContent() {
             <form onSubmit={editingRecipe ? handleUpdateRecipe : handleCreateRecipe}>
               <div className="space-y-4">
                 <Select
-                  label="Menu Item"
+                  label="Entree"
                   value={menuItemId}
-                  onChange={(e) => setMenuItemId(e.target.value)}
+                  onChange={(e) => {
+                    setMenuItemId(e.target.value);
+                    // Load assigned sides when entree changes
+                    if (e.target.value) {
+                      const assignedSides = getEntreeSides(e.target.value);
+                      setSelectedSides(assignedSides.map((side) => side.id));
+                    } else {
+                      setSelectedSides([]);
+                    }
+                  }}
                   options={menuItemOptions}
                   required
                 />
@@ -569,6 +649,50 @@ function RecipesContent() {
                   </div>
                 </div>
 
+                {/* Sides Assignment */}
+                <div>
+                  <label className="block text-sm font-medium mb-2 text-foreground">
+                    Possible Sides <span className="text-gray-400 font-normal">(Optional)</span>
+                  </label>
+                  <p className="text-xs text-gray-400 mb-3">
+                    Select one or more possible sides that can go with this entree. The AI will choose an appropriate side from your selection when generating menus. You can select multiple sides or skip this step entirely.
+                  </p>
+                  {allSides.length > 0 ? (
+                    <div className="space-y-2 max-h-48 overflow-y-auto border border-secondary-lighter rounded-lg p-3">
+                      {allSides.map((side: any) => (
+                        <label
+                          key={side.id}
+                          className="flex items-center gap-2 p-2 hover:bg-secondary-light rounded cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedSides.includes(side.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedSides([...selectedSides, side.id]);
+                              } else {
+                                setSelectedSides(selectedSides.filter((id) => id !== side.id));
+                              }
+                            }}
+                            className="w-4 h-4 rounded border-secondary-lighter bg-secondary-light text-primary focus:ring-primary"
+                          />
+                          <span className="text-sm text-foreground">
+                            {side.name}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400 p-3 border border-secondary-lighter rounded-lg">
+                      No sides available.{" "}
+                      <a href="/sides" className="text-primary hover:underline">
+                        Create sides first
+                      </a>
+                      .
+                    </p>
+                  )}
+                </div>
+
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-2">
                   <Button type="submit" disabled={loading} className="w-full sm:w-auto">
                     {editingRecipe ? "Update" : "Create"} Recipe
@@ -636,6 +760,24 @@ function RecipesContent() {
                           </p>
                         </div>
                       )}
+                      {(() => {
+                        const entreeSides = getEntreeSides(recipe.menu_item_id);
+                        return entreeSides.length > 0 && (
+                          <div className="mt-4">
+                            <h4 className="font-medium mb-2 text-foreground">Possible Sides:</h4>
+                            <div className="flex flex-wrap gap-2">
+                              {entreeSides.map((side) => (
+                                <span
+                                  key={side.id}
+                                  className="px-3 py-1 bg-primary/20 text-primary rounded-full text-sm"
+                                >
+                                  {side.name}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div className="flex gap-2 ml-4">
                       <Button

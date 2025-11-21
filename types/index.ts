@@ -39,6 +39,22 @@ export interface MenuItem {
   is_hidden: boolean;
 }
 
+export interface Side {
+  id: string;
+  household_id: string;
+  name: string;
+  created_by: string;
+  created_at: number;
+  is_hidden: boolean;
+}
+
+export interface EntreeSide {
+  id: string;
+  entree_id: string; // menu_item_id (entree)
+  side_id: string;
+  created_at: number;
+}
+
 export interface Recipe {
   id: string;
   menu_item_id: string;
@@ -63,6 +79,7 @@ export interface MenuPlan {
   date: string; // ISO date string
   menu_item_id: string;
   meal_type: MealType;
+  side_id?: string; // Optional: side associated with this menu plan
   created_by: string;
   created_at: number;
 }

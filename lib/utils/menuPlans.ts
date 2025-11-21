@@ -8,21 +8,28 @@ export interface CreateMenuPlanInput {
   menuItemId: string;
   mealType: MealType;
   userId: string;
+  sideId?: string; // Optional: side to associate with this menu plan
 }
 
 export async function createMenuPlan(input: CreateMenuPlanInput): Promise<string> {
   const menuPlanId = id();
 
+  const planData: any = {
+    id: menuPlanId,
+    household_id: input.householdId,
+    date: input.date,
+    menu_item_id: input.menuItemId,
+    meal_type: input.mealType,
+    created_by: input.userId,
+    created_at: Date.now(),
+  };
+
+  if (input.sideId) {
+    planData.side_id = input.sideId;
+  }
+
   db.transact([
-    db.tx.menu_plans[menuPlanId].update({
-      id: menuPlanId,
-      household_id: input.householdId,
-      date: input.date,
-      menu_item_id: input.menuItemId,
-      meal_type: input.mealType,
-      created_by: input.userId,
-      created_at: Date.now(),
-    }),
+    db.tx.menu_plans[menuPlanId].update(planData),
   ]);
 
   return menuPlanId;
@@ -30,7 +37,7 @@ export async function createMenuPlan(input: CreateMenuPlanInput): Promise<string
 
 export async function updateMenuPlan(
   menuPlanId: string,
-  updates: Partial<Pick<MenuPlan, "date" | "menu_item_id" | "meal_type">>
+  updates: Partial<Pick<MenuPlan, "date" | "menu_item_id" | "meal_type" | "side_id">>
 ): Promise<void> {
   db.transact([
     db.tx.menu_plans[menuPlanId].update(updates),
