@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Icon Generator</title>
+</head>
+<body>
+  <h1>PWA Icon Generator</h1>
+  <p>Open this file in a browser and use the canvas to generate icons, or use an online tool like:</p>
+  <ul>
+    <li><a href="https://realfavicongenerator.net/" target="_blank">RealFaviconGenerator</a></li>
+    <li><a href="https://www.pwabuilder.com/imageGenerator" target="_blank">PWA Builder Image Generator</a></li>
+  </ul>
+  <canvas id="icon192" width="192" height="192" style="border: 1px solid #000; margin: 10px;"></canvas>
+  <canvas id="icon512" width="512" height="512" style="border: 1px solid #000; margin: 10px;"></canvas>
+  <script>
+    // Simple icon generator - creates orange circle with "MP" text
+    function generateIcon(canvas, size) {
+      const ctx = canvas.getContext('2d');
+      // Background
+      ctx.fillStyle = '#0a0a0a';
+      ctx.fillRect(0, 0, size, size);
+      // Circle
+      ctx.fillStyle = '#ff6b35';
+      ctx.beginPath();
+      ctx.arc(size/2, size/2, size/2 - 10, 0, 2 * Math.PI);
+      ctx.fill();
+      // Text
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `bold ${size/3}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('MP', size/2, size/2);
+    }
+    generateIcon(document.getElementById('icon192'), 192);
+    generateIcon(document.getElementById('icon512'), 512);
+    
+    // Download function
+    function downloadIcon(canvas, filename) {
+      canvas.toBlob(function(blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+    }
+    
+    // Add download buttons
+    document.getElementById('icon192').onclick = () => downloadIcon(document.getElementById('icon192'), 'icon-192.png');
+    document.getElementById('icon512').onclick = () => downloadIcon(document.getElementById('icon512'), 'icon-512.png');
+  </script>
+</body>
+</html>
