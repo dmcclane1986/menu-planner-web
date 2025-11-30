@@ -108,6 +108,7 @@ export interface ShoppingItem {
   unit: string;
   checked: boolean;
   added_manually: boolean;
+  sort_order?: number;
 }
 
 export interface ShoppingListTemplate {

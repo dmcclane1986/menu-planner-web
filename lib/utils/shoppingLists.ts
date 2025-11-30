@@ -40,7 +40,8 @@ export async function deleteShoppingList(shoppingListId: string): Promise<void> 
 
 export async function createShoppingItems(
   shoppingListId: string,
-  items: Omit<ShoppingItem, "id" | "shopping_list_id">[]
+  items: Omit<ShoppingItem, "id" | "shopping_list_id">[],
+  startingSortOrder: number = 0
 ): Promise<void> {
   if (items.length === 0) return;
 
@@ -54,6 +55,7 @@ export async function createShoppingItems(
       unit: item.unit,
       checked: item.checked || false,
       added_manually: item.added_manually || false,
+      sort_order: item.sort_order ?? (startingSortOrder + index),
     })
   );
 
@@ -62,11 +64,23 @@ export async function createShoppingItems(
 
 export async function updateShoppingItem(
   itemId: string,
-  updates: Partial<Pick<ShoppingItem, "ingredient_name" | "quantity" | "unit" | "checked">>
+  updates: Partial<Pick<ShoppingItem, "ingredient_name" | "quantity" | "unit" | "checked" | "sort_order">>
 ): Promise<void> {
   db.transact([
     db.tx.shopping_items[itemId].update(updates),
   ]);
+}
+
+export async function updateShoppingItemsOrder(
+  items: Array<{ id: string; sort_order: number }>
+): Promise<void> {
+  if (items.length === 0) return;
+
+  const updates = items.map((item) =>
+    db.tx.shopping_items[item.id].update({ sort_order: item.sort_order })
+  );
+
+  db.transact(updates);
 }
 
 export async function deleteShoppingItem(itemId: string): Promise<void> {

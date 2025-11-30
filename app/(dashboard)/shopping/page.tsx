@@ -14,6 +14,7 @@ import {
   createShoppingListTemplate,
   deleteShoppingListTemplate,
   parseTemplateItems,
+  updateShoppingItemsOrder,
 } from "@/lib/utils/shoppingLists";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -46,6 +47,8 @@ function ShoppingListContent() {
   const [showLoadTemplateModal, setShowLoadTemplateModal] = useState(false);
   const [listSearchQuery, setListSearchQuery] = useState("");
   const [itemSearchQuery, setItemSearchQuery] = useState("");
+  const [showCheckedItems, setShowCheckedItems] = useState(false);
+  const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
 
   // Query household members for this user
   const membersQuery = db.useQuery(
@@ -445,6 +448,11 @@ function ShoppingListContent() {
         throw new Error("Please enter an item name");
       }
 
+      // Get the next sort order (add at the end of unchecked items)
+      const maxSortOrder = shoppingItems.reduce((max: number, item: any) => {
+        return Math.max(max, item.sort_order ?? 0);
+      }, -1);
+
       await createShoppingItems(selectedListId, [
         {
           ingredient_name: newItemName.trim(),
@@ -452,6 +460,7 @@ function ShoppingListContent() {
           unit: newItemUnit.trim(),
           checked: false,
           added_manually: true,
+          sort_order: maxSortOrder + 1,
         },
       ]);
 
@@ -867,16 +876,83 @@ function ShoppingListContent() {
     return startDate.includes(query) || endDate.includes(query);
   });
 
-  // Filter shopping items by search query
-  const filteredShoppingItems = shoppingItems.filter((item: any) => {
+  // Sort items by sort_order, then filter
+  const sortedShoppingItems = [...shoppingItems].sort((a: any, b: any) => {
+    const orderA = a.sort_order ?? 999999;
+    const orderB = b.sort_order ?? 999999;
+    return orderA - orderB;
+  });
+
+  // Filter shopping items by search query and checked status
+  const filteredShoppingItems = sortedShoppingItems.filter((item: any) => {
+    // Hide checked items unless showCheckedItems is true
+    if (item.checked && !showCheckedItems) return false;
+    
     if (!itemSearchQuery) return true;
     const query = itemSearchQuery.toLowerCase();
     return item.ingredient_name.toLowerCase().includes(query);
   });
 
+  // Get count of hidden checked items
+  const hiddenCheckedCount = sortedShoppingItems.filter((item: any) => item.checked).length;
+
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, itemId: string) => {
+    setDraggedItemId(itemId);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetItemId: string) => {
+    e.preventDefault();
+    
+    if (!draggedItemId || draggedItemId === targetItemId) {
+      setDraggedItemId(null);
+      return;
+    }
+
+    // Get unchecked items in current order for reordering
+    const uncheckedItems = sortedShoppingItems.filter((item: any) => !item.checked);
+    const draggedIndex = uncheckedItems.findIndex((item: any) => item.id === draggedItemId);
+    const targetIndex = uncheckedItems.findIndex((item: any) => item.id === targetItemId);
+
+    if (draggedIndex === -1 || targetIndex === -1) {
+      setDraggedItemId(null);
+      return;
+    }
+
+    // Reorder the array
+    const reorderedItems = [...uncheckedItems];
+    const [draggedItem] = reorderedItems.splice(draggedIndex, 1);
+    reorderedItems.splice(targetIndex, 0, draggedItem);
+
+    // Update sort_order for all affected items
+    const updates = reorderedItems.map((item: any, index: number) => ({
+      id: item.id,
+      sort_order: index,
+    }));
+
+    try {
+      await updateShoppingItemsOrder(updates);
+    } catch (err: any) {
+      setError(err.message || "Failed to reorder items");
+    }
+
+    setDraggedItemId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItemId(null);
+  };
+
   const selectedList = shoppingLists.find((list: any) => list.id === selectedListId);
-  const checkedCount = filteredShoppingItems.filter((item: any) => item.checked).length;
-  const totalCount = filteredShoppingItems.length;
+  const checkedCount = shoppingItems.filter((item: any) => item.checked).length;
+  const uncheckedCount = shoppingItems.filter((item: any) => !item.checked).length;
+  const totalCount = shoppingItems.length;
 
   return (
     <div className="min-h-screen p-4 md:p-8">
@@ -1062,7 +1138,8 @@ function ShoppingListContent() {
                     )}
                     {totalCount > 0 && (
                       <p className="text-sm text-primary mt-1">
-                        {checkedCount} of {totalCount} items checked
+                        {uncheckedCount} item{uncheckedCount !== 1 ? "s" : ""} remaining
+                        {checkedCount > 0 && ` • ${checkedCount} checked`}
                       </p>
                     )}
                   </div>
@@ -1139,9 +1216,9 @@ function ShoppingListContent() {
                   </form>
                 </Card>
 
-                {/* Search Items */}
+                {/* Search Items and Show Checked Toggle */}
                 {shoppingItems.length > 0 && (
-                  <div className="mb-4">
+                  <div className="mb-4 space-y-3">
                     <Input
                       type="text"
                       value={itemSearchQuery}
@@ -1149,6 +1226,19 @@ function ShoppingListContent() {
                       placeholder="Search items..."
                       className="w-full"
                     />
+                    {hiddenCheckedCount > 0 && (
+                      <div className="flex items-center justify-between">
+                        <button
+                          onClick={() => setShowCheckedItems(!showCheckedItems)}
+                          className="text-sm text-primary hover:text-primary/80 flex items-center gap-2"
+                        >
+                          {showCheckedItems ? "▼" : "▶"} {hiddenCheckedCount} checked item{hiddenCheckedCount !== 1 ? "s" : ""} {showCheckedItems ? "shown" : "hidden"}
+                        </button>
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-400">
+                      💡 Drag items to reorder your shopping list
+                    </p>
                   </div>
                 )}
 
@@ -1182,12 +1272,31 @@ function ShoppingListContent() {
                     {filteredShoppingItems.map((item: any) => (
                       <div
                         key={item.id}
-                        className={`flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-lg border ${
+                        draggable={!item.checked && editingItemId !== item.id}
+                        onDragStart={(e) => handleDragStart(e, item.id)}
+                        onDragOver={handleDragOver}
+                        onDrop={(e) => handleDrop(e, item.id)}
+                        onDragEnd={handleDragEnd}
+                        className={`flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-lg border transition-all ${
                           item.checked
                             ? "bg-secondary-lighter opacity-60 border-secondary-lighter"
                             : "bg-secondary-light border-secondary-lighter"
+                        } ${
+                          draggedItemId === item.id
+                            ? "opacity-50 scale-95"
+                            : ""
+                        } ${
+                          !item.checked && editingItemId !== item.id
+                            ? "cursor-grab active:cursor-grabbing"
+                            : ""
                         }`}
                       >
+                        {/* Drag Handle */}
+                        {!item.checked && editingItemId !== item.id && (
+                          <div className="flex-shrink-0 text-gray-400 cursor-grab active:cursor-grabbing select-none">
+                            <span className="text-lg">⋮⋮</span>
+                          </div>
+                        )}
                         <input
                           type="checkbox"
                           checked={item.checked}
