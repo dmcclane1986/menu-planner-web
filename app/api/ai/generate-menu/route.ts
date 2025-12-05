@@ -19,8 +19,14 @@ interface GenerateMenuRequest {
   householdId: string;
   menuItems: MenuItem[];
   selections: Selection[];
-  dietaryInstructions: string;
+  dietaryInstructions?: string;
   genreWeights: Record<MenuGenre, number>;
+}
+
+interface MenuPlanResponse {
+  date: string;
+  mealType: MealType;
+  menuItemName: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -37,8 +43,26 @@ export async function POST(request: NextRequest) {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    const body: GenerateMenuRequest = await request.json();
+    // Parse and validate request body
+    let body: GenerateMenuRequest;
+    try {
+      body = await request.json();
+    } catch (error) {
+      return NextResponse.json(
+        { error: "Invalid JSON in request body" },
+        { status: 400 }
+      );
+    }
+
     const { menuItems, selections, dietaryInstructions, genreWeights } = body;
+
+    // Validate required fields
+    if (!genreWeights || typeof genreWeights !== "object") {
+      return NextResponse.json(
+        { error: "Genre weights are required" },
+        { status: 400 }
+      );
+    }
 
     if (!menuItems || menuItems.length === 0) {
       return NextResponse.json(
@@ -86,6 +110,18 @@ export async function POST(request: NextRequest) {
       .map(([genre, weight]) => `${genre}: ${weight}`)
       .join(", ");
 
+    // Validate selections have valid meal types
+    const validMealTypes: MealType[] = ["breakfast", "lunch", "dinner"];
+    const invalidSelections = selections.filter(
+      (s) => !validMealTypes.includes(s.mealType)
+    );
+    if (invalidSelections.length > 0) {
+      return NextResponse.json(
+        { error: `Invalid meal type(s) found: ${invalidSelections.map(s => s.mealType).join(", ")}` },
+        { status: 400 }
+      );
+    }
+
     const selectionsText = selections
       .map((s) => `${s.day} ${s.mealType} (${s.date})`)
       .join(", ");
@@ -93,9 +129,11 @@ export async function POST(request: NextRequest) {
     const hasVotingData = itemsWithVotes.length > 0;
     const votingInstructions = hasVotingData
       ? `\n6. IMPORTANT: Use popularity scores to reflect household member preferences:
-   - Items with positive popularity scores (👍) are liked by household members - prioritize these
+   - Items with no votes (0) have highest preference  --prioritize these
+   - Items with positive popularity scores (👍) are liked by household members when 0 no votes remain --prioritize these
    - Items with negative popularity scores (👎) are disliked - avoid these when possible
-   - Items with no votes (0) have equal preference
+   
+   - When no votes are present, prioritize items with no votes (0)
    - When items have votes, strongly prefer higher-scored items over lower-scored ones
    - Only use items with negative scores if no better alternatives exist`
       : "";
@@ -153,44 +191,57 @@ Only return the JSON array, no other text.`;
     }
 
     // Parse the response - OpenAI may return the array directly or wrapped
-    let menuPlans: any[] = [];
-    try {
-      // Try parsing as JSON first
-      const parsed = JSON.parse(responseContent.trim());
-      
-      // Handle different response formats
-      if (Array.isArray(parsed)) {
-        menuPlans = parsed;
-      } else if (parsed.menuPlans && Array.isArray(parsed.menuPlans)) {
-        menuPlans = parsed.menuPlans;
-      } else if (parsed.plans && Array.isArray(parsed.plans)) {
-        menuPlans = parsed.plans;
-      } else {
-        // Try to extract array from the response using regex
-        const arrayMatch = responseContent.match(/\[[\s\S]*\]/);
+    let menuPlans: MenuPlanResponse[] = [];
+    
+    // Helper function to extract and parse JSON array
+    const extractArrayFromResponse = (content: string): MenuPlanResponse[] | null => {
+      try {
+        // Try parsing as JSON first
+        const parsed = JSON.parse(content.trim());
+        
+        // Handle different response formats
+        if (Array.isArray(parsed)) {
+          return parsed;
+        } else if (parsed.menuPlans && Array.isArray(parsed.menuPlans)) {
+          return parsed.menuPlans;
+        } else if (parsed.plans && Array.isArray(parsed.plans)) {
+          return parsed.plans;
+        }
+      } catch {
+        // If direct parsing fails, try to extract array with regex
+        const arrayMatch = content.match(/\[[\s\S]*\]/);
         if (arrayMatch) {
-          menuPlans = JSON.parse(arrayMatch[0]);
-        } else {
-          throw new Error("Could not find array in response");
+          try {
+            return JSON.parse(arrayMatch[0]);
+          } catch {
+            return null;
+          }
         }
       }
-    } catch (e) {
-      // Last resort: try to extract array with regex
-      const arrayMatch = responseContent.match(/\[[\s\S]*\]/);
-      if (arrayMatch) {
-        try {
-          menuPlans = JSON.parse(arrayMatch[0]);
-        } catch (parseError) {
-          throw new Error("Invalid JSON response from OpenAI");
-        }
-      } else {
-        throw new Error("Invalid JSON response from OpenAI");
-      }
+      return null;
+    };
+
+    const extractedPlans = extractArrayFromResponse(responseContent);
+    if (!extractedPlans) {
+      throw new Error("Invalid JSON response from OpenAI - could not extract menu plans array");
     }
+    menuPlans = extractedPlans;
 
     // Validate and filter results
-    const validMenuPlans = menuPlans.filter((plan: any) => {
+    const validMenuPlans = menuPlans.filter((plan: MenuPlanResponse) => {
+      // Check required fields exist
       if (!plan.date || !plan.mealType || !plan.menuItemName) {
+        return false;
+      }
+
+      // Validate meal type
+      if (!validMealTypes.includes(plan.mealType)) {
+        return false;
+      }
+
+      // Validate date format (basic check for YYYY-MM-DD)
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(plan.date)) {
         return false;
       }
 
@@ -203,8 +254,15 @@ Only return the JSON array, no other text.`;
 
     if (validMenuPlans.length === 0) {
       return NextResponse.json(
-        { error: "No valid menu plans generated" },
+        { error: "No valid menu plans generated. Please check that menu items match the selections." },
         { status: 500 }
+      );
+    }
+
+    // Check if we got plans for all requested selections
+    if (validMenuPlans.length < selections.length) {
+      console.warn(
+        `Generated ${validMenuPlans.length} plans but ${selections.length} were requested`
       );
     }
 
@@ -212,12 +270,11 @@ Only return the JSON array, no other text.`;
       menuPlans: validMenuPlans,
       count: validMenuPlans.length,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error generating menu:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to generate menu" },
-      { status: 500 }
-    );
+    const errorMessage =
+      error instanceof Error ? error.message : "Failed to generate menu";
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
 
