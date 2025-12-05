@@ -21,6 +21,7 @@ interface GenerateMenuRequest {
   selections: Selection[];
   dietaryInstructions?: string;
   genreWeights: Record<MenuGenre, number>;
+  excludedMenuItemNames?: string[];
 }
 
 interface MenuPlanResponse {
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { menuItems, selections, dietaryInstructions, genreWeights } = body;
+    const { menuItems, selections, dietaryInstructions, genreWeights, excludedMenuItemNames = [] } = body;
 
     // Validate required fields
     if (!genreWeights || typeof genreWeights !== "object") {
@@ -126,9 +127,18 @@ export async function POST(request: NextRequest) {
       .map((s) => `${s.day} ${s.mealType} (${s.date})`)
       .join(", ");
 
+    // Build excluded items list for the prompt
+    let excludedItemsText = "";
+    if (excludedMenuItemNames && excludedMenuItemNames.length > 0) {
+      excludedItemsText = `\n\nMenu Items to EXCLUDE (recently used in the previous two weeks):
+${excludedMenuItemNames.map((name) => `- ${name}`).join("\n")}
+
+IMPORTANT: Do NOT select any of the excluded menu items listed above. These items were already used in the calendar during the two weeks before the week you are generating for.`;
+    }
+
     const hasVotingData = itemsWithVotes.length > 0;
     const votingInstructions = hasVotingData
-      ? `\n6. IMPORTANT: Use popularity scores to reflect household member preferences:
+      ? `\n5. IMPORTANT: Use popularity scores to reflect household member preferences:
    - Items with no votes (0) have highest preference  --prioritize these
    - Items with positive popularity scores (👍) are liked by household members when 0 no votes remain --prioritize these
    - Items with negative popularity scores (👎) are disliked - avoid these when possible
@@ -138,10 +148,14 @@ export async function POST(request: NextRequest) {
    - Only use items with negative scores if no better alternatives exist`
       : "";
 
+    const exclusionRequirement = excludedMenuItemNames && excludedMenuItemNames.length > 0
+      ? `\n6. DO NOT select any menu items from the exclusion list above - these were recently used in the previous two weeks and should be avoided`
+      : "";
+
     const prompt = `You are a meal planning assistant. Generate menu suggestions based on the following criteria:
 
 Available Menu Items:
-${menuItemsList}
+${menuItemsList}${excludedItemsText}
 
 Genre Preferences (higher = more likely): ${genreWeightsText}
 
@@ -154,8 +168,7 @@ Requirements:
 1. Select one menu item from the available list for each meal
 2. Consider the genre preferences when selecting items
 3. Follow dietary instructions if provided
-4. Try to vary the menu items across the week (avoid too much repetition)
-5. Consider meal type appropriateness (e.g., breakfast items for breakfast)${votingInstructions}
+4. Try to vary the menu items across the week (avoid too much repetition)${votingInstructions}${exclusionRequirement}
 
 Return a JSON array with this exact format:
 [

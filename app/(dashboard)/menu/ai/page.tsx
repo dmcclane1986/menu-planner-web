@@ -292,6 +292,27 @@ function AIMenuContent() {
         return;
       }
 
+      // Calculate date range for two weeks before the week being generated
+      const earliestSelectionDate = new Date(Math.min(...selectionsToGenerate.map(s => new Date(s.date).getTime())));
+      const twoWeeksBeforeStart = new Date(earliestSelectionDate);
+      twoWeeksBeforeStart.setDate(earliestSelectionDate.getDate() - 14);
+      const twoWeeksBeforeEnd = new Date(earliestSelectionDate);
+      twoWeeksBeforeEnd.setDate(earliestSelectionDate.getDate() - 1);
+      
+      const excludeStartDate = twoWeeksBeforeStart.toISOString().split("T")[0];
+      const excludeEndDate = twoWeeksBeforeEnd.toISOString().split("T")[0];
+
+      // Get menu items from the previous two weeks
+      const excludedMenuPlans = existingMenuPlans.filter((plan: any) => {
+        return plan.date >= excludeStartDate && plan.date <= excludeEndDate;
+      });
+
+      // Get unique menu item names from excluded plans
+      const excludedMenuItemIds = new Set(excludedMenuPlans.map((plan: any) => plan.menu_item_id));
+      const excludedMenuItemNames = menuItems
+        .filter((mi: any) => excludedMenuItemIds.has(mi.id))
+        .map((mi: any) => mi.name);
+
       // Call API to generate menu
       const response = await fetch("/api/ai/generate-menu", {
         method: "POST",
@@ -309,6 +330,7 @@ function AIMenuContent() {
           selections: selectionsToGenerate,
           dietaryInstructions,
           genreWeights,
+          excludedMenuItemNames,
         }),
       });
 
