@@ -407,6 +407,43 @@ function MenuCalendarContent() {
     }
   };
 
+  // Handle moving menu item to a new date and/or meal type
+  const handleMoveMenuPlan = async (planId: string, newDate: string, newMealType: MealType) => {
+    setError("");
+    setLoading(true);
+
+    try {
+      const plan = allMenuPlans.find((p: any) => p.id === planId);
+      if (!plan) {
+        throw new Error("Menu plan not found");
+      }
+
+      // Check if target location already has a menu plan
+      const existingPlan = getMenuPlan(newDate, newMealType);
+      if (existingPlan && existingPlan.id !== planId) {
+        // Swap the items
+        await updateMenuPlan(planId, {
+          date: newDate,
+          meal_type: newMealType,
+        });
+        await updateMenuPlan(existingPlan.id, {
+          date: plan.date,
+          meal_type: plan.meal_type,
+        });
+      } else {
+        // Just move the item
+        await updateMenuPlan(planId, {
+          date: newDate,
+          meal_type: newMealType,
+        });
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to move menu item");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const mealTypes: MealType[] = ["breakfast", "lunch", "dinner"];
   const mealTypeLabels: Record<MealType, string> = {
     breakfast: "Breakfast",
@@ -540,6 +577,7 @@ function MenuCalendarContent() {
               openAddModal={openAddModal}
               openEditModal={openEditModal}
               handleDeleteMenuPlan={handleDeleteMenuPlan}
+              handleMoveMenuPlan={handleMoveMenuPlan}
               formatDate={formatDate}
               formatDateDisplay={formatDateDisplay}
               loading={loading}
@@ -556,6 +594,7 @@ function MenuCalendarContent() {
               openAddModal={openAddModal}
               openEditModal={openEditModal}
               handleDeleteMenuPlan={handleDeleteMenuPlan}
+              handleMoveMenuPlan={handleMoveMenuPlan}
               formatDate={formatDate}
               formatDateDisplay={formatDateDisplay}
               currentDate={currentDate}
@@ -600,6 +639,7 @@ function MenuCalendarContent() {
               openAddModal={openAddModal}
               openEditModal={openEditModal}
               handleDeleteMenuPlan={handleDeleteMenuPlan}
+              handleMoveMenuPlan={handleMoveMenuPlan}
               formatDate={formatDate}
               formatDateDisplay={formatDateDisplay}
               currentDate={currentDate}
@@ -938,6 +978,7 @@ function WeekView({
   openAddModal,
   openEditModal,
   handleDeleteMenuPlan,
+  handleMoveMenuPlan,
   formatDate,
   formatDateDisplay,
   loading,
@@ -954,11 +995,60 @@ function WeekView({
   openAddModal: (date: string, mealType: MealType) => void;
   openEditModal: (plan: MenuPlan) => void;
   handleDeleteMenuPlan: (planId: string) => void;
+  handleMoveMenuPlan: (planId: string, newDate: string, newMealType: MealType) => Promise<void>;
   formatDate: (date: Date) => string;
   formatDateDisplay: (date: Date) => string;
   loading: boolean;
 }) {
   const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const [draggedPlanId, setDraggedPlanId] = useState<string | null>(null);
+  const [dragOverCell, setDragOverCell] = useState<{ date: string; mealType: MealType } | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, planId: string) => {
+    setDraggedPlanId(planId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", planId);
+    // Add visual feedback
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = "0.5";
+    }
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    setDraggedPlanId(null);
+    setDragOverCell(null);
+    // Reset visual feedback
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = "1";
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent, date: string, mealType: MealType) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverCell({ date, mealType });
+  };
+
+  const handleDragLeave = () => {
+    setDragOverCell(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetDate: string, targetMealType: MealType) => {
+    e.preventDefault();
+    setDragOverCell(null);
+    
+    const planId = e.dataTransfer.getData("text/plain");
+    if (!planId) return;
+
+    const plan = getMenuPlan(targetDate, targetMealType);
+    // Don't do anything if dropping on the same location
+    if (plan && plan.id === planId) {
+      return;
+    }
+
+    await handleMoveMenuPlan(planId, targetDate, targetMealType);
+    setDraggedPlanId(null);
+  };
 
   return (
     <div className="border border-secondary-lighter rounded-lg overflow-hidden">
@@ -990,16 +1080,45 @@ function WeekView({
             const dateStr = formatDate(date);
             const plan = getMenuPlan(dateStr, mealType);
             const menuItem = plan ? getMenuItem(plan.menu_item_id) : null;
+            const isDragOver = dragOverCell?.date === dateStr && dragOverCell?.mealType === mealType;
+            const isDragging = draggedPlanId !== null;
 
             return (
               <div
                 key={idx}
-                className="p-2 sm:p-1.5 md:p-2 border-r border-secondary-lighter last:border-r-0 min-h-[120px] sm:min-h-[95px] md:min-h-[100px] hover:bg-secondary-light/50 transition-colors"
+                className={`p-2 sm:p-1.5 md:p-2 border-r border-secondary-lighter last:border-r-0 min-h-[120px] sm:min-h-[95px] md:min-h-[100px] transition-colors ${
+                  isDragOver
+                    ? "bg-primary/20 border-2 border-primary border-dashed"
+                    : isDragging
+                    ? "hover:bg-primary/10"
+                    : "hover:bg-secondary-light/50"
+                }`}
+                onDragOver={(e) => handleDragOver(e, dateStr, mealType)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, dateStr, mealType)}
               >
                 {plan && menuItem ? (
                   <div className="group h-full flex flex-col">
-                    <Card className="p-2.5 sm:p-2 h-full flex flex-col gap-2">
-                      <div className="flex justify-between items-start gap-2">
+                    <Card 
+                      className={`p-2.5 sm:p-2 h-full flex flex-col gap-2 ${
+                        draggedPlanId === plan.id ? "opacity-50" : ""
+                      }`}
+                    >
+                      <div 
+                        className="flex justify-between items-start gap-2 cursor-move relative"
+                        draggable
+                        onDragStart={(e) => {
+                          // Only allow drag if not clicking on a button
+                          const target = e.target as HTMLElement;
+                          if (target.tagName === 'BUTTON' || target.closest('button')) {
+                            e.preventDefault();
+                            return;
+                          }
+                          handleDragStart(e, plan.id);
+                        }}
+                        onDragEnd={handleDragEnd}
+                        title="Drag to move to another day or meal time"
+                      >
                         <div 
                           className="flex-1 cursor-pointer min-w-0"
                           onClick={() => openEditModal(plan)}
@@ -1010,22 +1129,29 @@ function WeekView({
                             <p className="text-xs text-primary mt-0.5 hidden sm:block">Side: {getSide(plan.side_id).name}</p>
                           )}
                         </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteMenuPlan(plan.id);
-                          }}
-                          className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-red-500 text-lg sm:text-base md:text-xs touch-manipulation flex-shrink-0 w-6 h-6 sm:w-5 sm:h-5 flex items-center justify-center rounded hover:bg-red-500/20"
-                          aria-label="Delete"
-                        >
-                          ×
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <span className="text-gray-400 text-xs opacity-0 md:group-hover:opacity-100 transition-opacity select-none" title="Drag to move">
+                            ⋮⋮
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteMenuPlan(plan.id);
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-red-500 text-lg sm:text-base md:text-xs touch-manipulation flex-shrink-0 w-6 h-6 sm:w-5 sm:h-5 flex items-center justify-center rounded hover:bg-red-500/20"
+                            aria-label="Delete"
+                          >
+                            ×
+                          </button>
+                        </div>
                       </div>
                       
                       {/* Voting UI - Touch-friendly */}
                       <div className="flex items-center justify-center gap-2 sm:gap-1 mt-auto" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => handleVote(plan.id, 1)}
+                          onMouseDown={(e) => e.stopPropagation()}
                           disabled={loading}
                           className={`flex items-center justify-center px-3 py-2 sm:px-2 sm:py-1 md:px-2 md:py-1 rounded-md text-sm sm:text-xs md:text-xs transition-colors touch-manipulation min-w-[44px] sm:min-w-[32px] md:min-w-0 h-[44px] sm:h-auto ${
                             getUserVote(plan.id)?.vote === 1
@@ -1042,6 +1168,7 @@ function WeekView({
                         </span>
                         <button
                           onClick={() => handleVote(plan.id, -1)}
+                          onMouseDown={(e) => e.stopPropagation()}
                           disabled={loading}
                           className={`flex items-center justify-center px-3 py-2 sm:px-2 sm:py-1 md:px-2 md:py-1 rounded-md text-sm sm:text-xs md:text-xs transition-colors touch-manipulation min-w-[44px] sm:min-w-[32px] md:min-w-0 h-[44px] sm:h-auto ${
                             getUserVote(plan.id)?.vote === -1
@@ -1057,12 +1184,29 @@ function WeekView({
                     </Card>
                   </div>
                 ) : (
-                  <button
-                    onClick={() => openAddModal(dateStr, mealType)}
-                    className="w-full h-full text-gray-500 hover:text-primary hover:bg-secondary-light/50 active:bg-secondary-light rounded transition-colors text-sm sm:text-xs md:text-sm touch-manipulation py-3 sm:py-2 flex items-center justify-center font-medium"
-                  >
-                    + Add
-                  </button>
+                  <div className="w-full h-full relative">
+                    <button
+                      onClick={() => openAddModal(dateStr, mealType)}
+                      className="w-full h-full text-gray-500 hover:text-primary hover:bg-secondary-light/50 active:bg-secondary-light rounded transition-colors text-sm sm:text-xs md:text-sm touch-manipulation py-3 sm:py-2 flex items-center justify-center font-medium"
+                    >
+                      + Add
+                    </button>
+                    {/* Invisible drop zone overlay for empty cells */}
+                    <div 
+                      className="absolute inset-0 z-10"
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleDragOver(e, dateStr, mealType);
+                      }}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleDrop(e, dateStr, mealType);
+                      }}
+                    />
+                  </div>
                 )}
               </div>
             );
@@ -1085,6 +1229,7 @@ function MonthView({
   openAddModal,
   openEditModal,
   handleDeleteMenuPlan,
+  handleMoveMenuPlan,
   formatDate,
   formatDateDisplay,
   currentDate,
@@ -1099,6 +1244,7 @@ function MonthView({
   openAddModal: (date: string, mealType: MealType) => void;
   openEditModal: (plan: MenuPlan) => void;
   handleDeleteMenuPlan: (planId: string) => void;
+  handleMoveMenuPlan: (planId: string, newDate: string, newMealType: MealType) => Promise<void>;
   formatDate: (date: Date) => string;
   formatDateDisplay: (date: Date) => string;
   currentDate: Date;
@@ -1106,6 +1252,54 @@ function MonthView({
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const currentMonth = currentDate.getMonth();
   const currentYear = currentDate.getFullYear();
+  const [draggedPlanId, setDraggedPlanId] = useState<string | null>(null);
+  const [dragOverCell, setDragOverCell] = useState<{ date: string; mealType: MealType } | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, planId: string) => {
+    setDraggedPlanId(planId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", planId);
+    // Add visual feedback
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = "0.5";
+    }
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    setDraggedPlanId(null);
+    setDragOverCell(null);
+    // Reset visual feedback
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = "1";
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent, date: string, mealType: MealType) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverCell({ date, mealType });
+  };
+
+  const handleDragLeave = () => {
+    setDragOverCell(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetDate: string, targetMealType: MealType) => {
+    e.preventDefault();
+    setDragOverCell(null);
+    
+    const planId = e.dataTransfer.getData("text/plain");
+    if (!planId) return;
+
+    const plan = getMenuPlan(targetDate, targetMealType);
+    // Don't do anything if dropping on the same location
+    if (plan && plan.id === planId) {
+      return;
+    }
+
+    await handleMoveMenuPlan(planId, targetDate, targetMealType);
+    setDraggedPlanId(null);
+  };
 
   return (
     <div className="border border-secondary-lighter rounded-lg overflow-hidden">
@@ -1123,13 +1317,49 @@ function MonthView({
           const isCurrentMonth = date.getMonth() === currentMonth;
           const dateStr = formatDate(date);
           const plans = mealTypes.map((mt) => getMenuPlan(dateStr, mt)).filter(Boolean) as MenuPlan[];
+          const isDragOver = dragOverCell?.date === dateStr;
+          const isDragging = draggedPlanId !== null;
 
           return (
             <div
               key={idx}
-              className={`min-h-[120px] border-r border-b border-secondary-lighter p-2 ${
+              className={`min-h-[120px] border-r border-b border-secondary-lighter p-2 transition-colors ${
                 !isCurrentMonth ? "bg-secondary-lighter/30 opacity-50" : ""
+              } ${
+                isDragOver
+                  ? "bg-primary/20 border-2 border-primary border-dashed"
+                  : isDragging
+                  ? "hover:bg-primary/10"
+                  : ""
               }`}
+              onDragOver={(e) => {
+                // Allow drop on any meal type for this date
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                setDragOverCell({ date: dateStr, mealType: mealTypes[0] });
+              }}
+              onDragLeave={handleDragLeave}
+              onDrop={async (e) => {
+                e.preventDefault();
+                setDragOverCell(null);
+                
+                const planId = e.dataTransfer.getData("text/plain");
+                if (!planId) return;
+
+                // Find the first available meal type, or use the first one
+                const targetMealType = mealTypes.find(
+                  (mt) => !getMenuPlan(dateStr, mt)
+                ) || mealTypes[0];
+
+                const plan = getMenuPlan(dateStr, targetMealType);
+                // Don't do anything if dropping on the same location
+                if (plan && plan.id === planId) {
+                  return;
+                }
+
+                await handleMoveMenuPlan(planId, dateStr, targetMealType);
+                setDraggedPlanId(null);
+              }}
             >
               <div className="text-sm font-medium mb-1">{date.getDate()}</div>
               <div className="space-y-1">
@@ -1140,8 +1370,27 @@ function MonthView({
                   return (
                     <div
                       key={plan.id}
-                      className="text-xs p-1 bg-primary/20 text-primary rounded cursor-pointer hover:bg-primary/30 flex items-center justify-between gap-1"
-                      onClick={() => openEditModal(plan)}
+                      className={`text-xs p-1 bg-primary/20 text-primary rounded cursor-move hover:bg-primary/30 flex items-center justify-between gap-1 ${
+                        draggedPlanId === plan.id ? "opacity-50" : ""
+                      }`}
+                      draggable
+                      onDragStart={(e) => {
+                        // Only allow drag if not clicking on a button
+                        const target = e.target as HTMLElement;
+                        if (target.tagName === 'BUTTON' || target.closest('button')) {
+                          e.preventDefault();
+                          return;
+                        }
+                        handleDragStart(e, plan.id);
+                      }}
+                      onDragEnd={handleDragEnd}
+                      onClick={(e) => {
+                        // Only open edit modal if not dragging
+                        if (draggedPlanId !== plan.id) {
+                          openEditModal(plan);
+                        }
+                      }}
+                      title="Drag to move to another day"
                     >
                       <span className="flex-1 truncate">
                         {mealTypeLabels[plan.meal_type]}: {menuItem.name}
