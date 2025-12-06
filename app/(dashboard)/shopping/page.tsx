@@ -227,16 +227,32 @@ function ShoppingListContent() {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Get start and end of selected week (selected date + 7 days)
-      const startDate = new Date(selectedWeekStart);
-      startDate.setHours(0, 0, 0, 0);
-      const endDate = new Date(startDate);
-      endDate.setDate(startDate.getDate() + 6); // 7 days total (including start day)
-      endDate.setHours(23, 59, 59, 999);
-
-      const dateRangeStart = startDate.toISOString().split("T")[0];
-      const dateRangeEnd = endDate.toISOString().split("T")[0];
+      // Use the selected date exactly as-is to avoid timezone issues
+      const dateRangeStart = selectedWeekStart; // Already in YYYY-MM-DD format from date input
+      
+      // Helper function to add days to a date string (YYYY-MM-DD format)
+      // This avoids timezone issues by working directly with date components
+      const addDaysToDateString = (dateStr: string, daysToAdd: number): string => {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        
+        // Create a date object at noon local time to avoid DST boundary issues
+        const date = new Date(year, month - 1, day, 12, 0, 0);
+        date.setDate(date.getDate() + daysToAdd);
+        
+        // Format back to YYYY-MM-DD using local date components (not UTC)
+        const resultYear = date.getFullYear();
+        const resultMonth = String(date.getMonth() + 1).padStart(2, '0');
+        const resultDay = String(date.getDate()).padStart(2, '0');
+        return `${resultYear}-${resultMonth}-${resultDay}`;
+      };
+      
+      // Calculate end date: start date + 6 days = 7 days total (including start day)
+      const dateRangeEnd = addDaysToDateString(dateRangeStart, 6);
 
       console.log("=== Shopping List Generation Debug ===");
+      console.log("Selected week start input:", selectedWeekStart);
+      console.log("Date range start:", dateRangeStart);
+      console.log("Date range end:", dateRangeEnd);
       console.log("Week range:", dateRangeStart, "to", dateRangeEnd);
       console.log("Selected household:", selectedHouseholdId);
       console.log("Total menu plans in database:", allMenuPlans.length);
