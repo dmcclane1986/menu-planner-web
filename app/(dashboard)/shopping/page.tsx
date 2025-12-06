@@ -228,29 +228,57 @@ function ShoppingListContent() {
 
       // Get start and end of selected week (selected date + 7 days)
       // Use the selected date exactly as-is to avoid timezone issues
-      const dateRangeStart = selectedWeekStart; // Already in YYYY-MM-DD format from date input
+      // The date input always returns YYYY-MM-DD format
+      // Ensure we're using the exact string value without any conversion
+      const dateRangeStart = selectedWeekStart.trim(); // Already in YYYY-MM-DD format from date input
+      
+      // Validate the date format
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateRangeStart)) {
+        throw new Error(`Invalid date format: ${dateRangeStart}. Expected YYYY-MM-DD format.`);
+      }
       
       // Helper function to add days to a date string (YYYY-MM-DD format)
-      // This avoids timezone issues by working directly with date components
+      // Uses pure date arithmetic to completely avoid timezone issues
       const addDaysToDateString = (dateStr: string, daysToAdd: number): string => {
         const [year, month, day] = dateStr.split('-').map(Number);
         
-        // Create a date object at noon local time to avoid DST boundary issues
-        const date = new Date(year, month - 1, day, 12, 0, 0);
-        date.setDate(date.getDate() + daysToAdd);
+        // Helper to get days in a month (handles leap years)
+        const getDaysInMonth = (y: number, m: number): number => {
+          return new Date(y, m, 0).getDate();
+        };
         
-        // Format back to YYYY-MM-DD using local date components (not UTC)
-        const resultYear = date.getFullYear();
-        const resultMonth = String(date.getMonth() + 1).padStart(2, '0');
-        const resultDay = String(date.getDate()).padStart(2, '0');
-        return `${resultYear}-${resultMonth}-${resultDay}`;
+        let currentYear = year;
+        let currentMonth = month;
+        let currentDay = day + daysToAdd;
+        
+        // Handle day overflow
+        while (currentDay > getDaysInMonth(currentYear, currentMonth)) {
+          currentDay -= getDaysInMonth(currentYear, currentMonth);
+          currentMonth += 1;
+          if (currentMonth > 12) {
+            currentMonth = 1;
+            currentYear += 1;
+          }
+        }
+        
+        // Format back to YYYY-MM-DD
+        return `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
       };
       
       // Calculate end date: start date + 6 days = 7 days total (including start day)
       const dateRangeEnd = addDaysToDateString(dateRangeStart, 6);
 
       console.log("=== Shopping List Generation Debug ===");
-      console.log("Selected week start input:", selectedWeekStart);
+      console.log("Selected week start input (raw):", selectedWeekStart);
+      console.log("Selected week start input (type):", typeof selectedWeekStart);
+      
+      // Verify the date parsing
+      const [testYear, testMonth, testDay] = dateRangeStart.split('-').map(Number);
+      const testDate = new Date(testYear, testMonth - 1, testDay);
+      console.log("Parsed date components:", { year: testYear, month: testMonth, day: testDay });
+      console.log("Date object created:", testDate.toISOString());
+      console.log("Date object local string:", testDate.toLocaleDateString());
+      
       console.log("Date range start:", dateRangeStart);
       console.log("Date range end:", dateRangeEnd);
       console.log("Week range:", dateRangeStart, "to", dateRangeEnd);
