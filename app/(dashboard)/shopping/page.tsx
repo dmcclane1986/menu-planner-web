@@ -590,7 +590,7 @@ function ShoppingListContent() {
     const checkedItems = shoppingItems.filter((item: any) => item.checked);
 
     let text = `Shopping List\n`;
-    text += `${new Date(selectedList.date_range_start).toLocaleDateString()} - ${new Date(selectedList.date_range_end).toLocaleDateString()}\n\n`;
+    text += `${parseLocalDate(selectedList.date_range_start).toLocaleDateString()} - ${parseLocalDate(selectedList.date_range_end).toLocaleDateString()}\n\n`;
 
     if (uncheckedItems.length > 0) {
       text += `To Buy:\n`;
@@ -680,7 +680,7 @@ function ShoppingListContent() {
       <body>
         <h1>Shopping List</h1>
         <div class="date-range">
-          ${new Date(selectedList.date_range_start).toLocaleDateString()} - ${new Date(selectedList.date_range_end).toLocaleDateString()}
+          ${parseLocalDate(selectedList.date_range_start).toLocaleDateString()} - ${parseLocalDate(selectedList.date_range_end).toLocaleDateString()}
         </div>
     `;
 
@@ -730,7 +730,7 @@ function ShoppingListContent() {
 
     const uncheckedItems = shoppingItems.filter((item: any) => !item.checked);
     let text = `Shopping List\n`;
-    text += `${new Date(selectedList.date_range_start).toLocaleDateString()} - ${new Date(selectedList.date_range_end).toLocaleDateString()}\n\n`;
+    text += `${parseLocalDate(selectedList.date_range_start).toLocaleDateString()} - ${parseLocalDate(selectedList.date_range_end).toLocaleDateString()}\n\n`;
 
     if (uncheckedItems.length > 0) {
       text += `To Buy:\n`;
@@ -910,8 +910,8 @@ function ShoppingListContent() {
   const filteredShoppingLists = shoppingLists.filter((list: any) => {
     if (!listSearchQuery) return true;
     const query = listSearchQuery.toLowerCase();
-    const startDate = new Date(list.date_range_start).toLocaleDateString().toLowerCase();
-    const endDate = new Date(list.date_range_end).toLocaleDateString().toLowerCase();
+    const startDate = parseLocalDate(list.date_range_start).toLocaleDateString().toLowerCase();
+    const endDate = parseLocalDate(list.date_range_end).toLocaleDateString().toLowerCase();
     return startDate.includes(query) || endDate.includes(query);
   });
 
@@ -988,10 +988,17 @@ function ShoppingListContent() {
     setDraggedItemId(null);
   };
 
+  // Helper function to parse a YYYY-MM-DD date string as a local date (not UTC)
+  // This prevents timezone conversion issues when displaying dates
+  const parseLocalDate = (dateStr: string): Date => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
   // Helper function to format date range for display
   const formatDateRange = (startDate: string, endDate: string): string => {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+    const start = parseLocalDate(startDate);
+    const end = parseLocalDate(endDate);
     const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
     return `${start.toLocaleDateString(undefined, options)} - ${end.toLocaleDateString(undefined, options)}`;
   };
@@ -1180,7 +1187,7 @@ function ShoppingListContent() {
                     </h2>
                     {selectedList && (
                       <p className="text-sm text-gray-400">
-                        {new Date(selectedList.date_range_start).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })} - {new Date(selectedList.date_range_end).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+                        {parseLocalDate(selectedList.date_range_start).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })} - {parseLocalDate(selectedList.date_range_end).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
                       </p>
                     )}
                     {totalCount > 0 && (
