@@ -198,16 +198,12 @@ function ShoppingListContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedHouseholdId, householdMembers, allHouseholds]);
 
-  // Set default week start date (current week's Monday)
+  // Set default week start date (today)
   useEffect(() => {
     if (!selectedWeekStart) {
       const today = new Date();
-      const dayOfWeek = today.getDay();
-      const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Monday
-      const monday = new Date(today);
-      monday.setDate(diff);
-      monday.setHours(0, 0, 0, 0);
-      setSelectedWeekStart(monday.toISOString().split("T")[0]);
+      today.setHours(0, 0, 0, 0);
+      setSelectedWeekStart(today.toISOString().split("T")[0]);
     }
   }, [selectedWeekStart]);
 
@@ -230,15 +226,15 @@ function ShoppingListContent() {
       // Give a moment for UI to update
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      // Get start and end of selected week (Monday to Sunday)
-      const monday = new Date(selectedWeekStart);
-      monday.setHours(0, 0, 0, 0);
-      const sunday = new Date(monday);
-      sunday.setDate(monday.getDate() + 6);
-      sunday.setHours(23, 59, 59, 999);
+      // Get start and end of selected week (selected date + 7 days)
+      const startDate = new Date(selectedWeekStart);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(startDate);
+      endDate.setDate(startDate.getDate() + 6); // 7 days total (including start day)
+      endDate.setHours(23, 59, 59, 999);
 
-      const dateRangeStart = monday.toISOString().split("T")[0];
-      const dateRangeEnd = sunday.toISOString().split("T")[0];
+      const dateRangeStart = startDate.toISOString().split("T")[0];
+      const dateRangeEnd = endDate.toISOString().split("T")[0];
 
       console.log("=== Shopping List Generation Debug ===");
       console.log("Week range:", dateRangeStart, "to", dateRangeEnd);
@@ -251,13 +247,12 @@ function ShoppingListContent() {
         meal_type: p.meal_type
       })));
 
-      // Filter menu plans for this week
+      // Filter menu plans for this week - only include plans within the exact date range
       const weekMenuPlans = allMenuPlans.filter((plan: any) => {
-        const planDate = plan.date;
+        if (!plan.date) return false;
+        const planDate = plan.date.trim(); // Ensure no whitespace
+        // Compare as ISO date strings (YYYY-MM-DD format)
         const inRange = planDate >= dateRangeStart && planDate <= dateRangeEnd;
-        if (!inRange && allMenuPlans.length < 10) {
-          console.log(`Plan ${plan.id} date ${planDate} is outside range`);
-        }
         return inRange;
       });
 
@@ -949,6 +944,14 @@ function ShoppingListContent() {
     setDraggedItemId(null);
   };
 
+  // Helper function to format date range for display
+  const formatDateRange = (startDate: string, endDate: string): string => {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
+    return `${start.toLocaleDateString(undefined, options)} - ${end.toLocaleDateString(undefined, options)}`;
+  };
+
   const selectedList = shoppingLists.find((list: any) => list.id === selectedListId);
   const checkedCount = shoppingItems.filter((item: any) => item.checked).length;
   const uncheckedCount = shoppingItems.filter((item: any) => !item.checked).length;
@@ -989,7 +992,7 @@ function ShoppingListContent() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-2">
-                    Week Start Date (Monday)
+                    Week Start Date
                   </label>
                   <Input
                     type="date"
@@ -998,7 +1001,7 @@ function ShoppingListContent() {
                     className="w-full"
                   />
                   <p className="text-xs text-gray-400 mt-1">
-                    Select the Monday of the week to generate a list for
+                    Select the start date. The list will include 7 days from this date.
                   </p>
                 </div>
                 <Button
@@ -1099,11 +1102,10 @@ function ShoppingListContent() {
                       <div className="flex justify-between items-start">
                         <div>
                           <p className="font-medium">
-                            {new Date(list.date_range_start).toLocaleDateString()} -{" "}
-                            {new Date(list.date_range_end).toLocaleDateString()}
+                            Week of {formatDateRange(list.date_range_start, list.date_range_end)}
                           </p>
                           <p className="text-sm text-gray-400">
-                            {new Date(list.created_at).toLocaleDateString()}
+                            Created {new Date(list.created_at).toLocaleDateString()}
                           </p>
                         </div>
                         <button
@@ -1129,11 +1131,12 @@ function ShoppingListContent() {
               <Card>
                 <div className="flex justify-between items-center mb-6">
                   <div>
-                    <h2 className="text-2xl font-semibold mb-2">Shopping List</h2>
+                    <h2 className="text-2xl font-semibold mb-2">
+                      {selectedList ? `Shopping List - Week of ${formatDateRange(selectedList.date_range_start, selectedList.date_range_end)}` : 'Shopping List'}
+                    </h2>
                     {selectedList && (
                       <p className="text-sm text-gray-400">
-                        {new Date(selectedList.date_range_start).toLocaleDateString()} -{" "}
-                        {new Date(selectedList.date_range_end).toLocaleDateString()}
+                        {new Date(selectedList.date_range_start).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })} - {new Date(selectedList.date_range_end).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
                       </p>
                     )}
                     {totalCount > 0 && (
