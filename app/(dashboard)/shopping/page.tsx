@@ -906,14 +906,19 @@ function ShoppingListContent() {
     );
   }
 
-  // Filter shopping lists by search query
-  const filteredShoppingLists = shoppingLists.filter((list: any) => {
-    if (!listSearchQuery) return true;
-    const query = listSearchQuery.toLowerCase();
-    const startDate = parseLocalDate(list.date_range_start).toLocaleDateString().toLowerCase();
-    const endDate = parseLocalDate(list.date_range_end).toLocaleDateString().toLowerCase();
-    return startDate.includes(query) || endDate.includes(query);
-  });
+  // Filter shopping lists by search query and sort by newest first
+  const filteredShoppingLists = shoppingLists
+    .filter((list: any) => {
+      if (!listSearchQuery) return true;
+      const query = listSearchQuery.toLowerCase();
+      const startDate = parseLocalDate(list.date_range_start).toLocaleDateString().toLowerCase();
+      const endDate = parseLocalDate(list.date_range_end).toLocaleDateString().toLowerCase();
+      return startDate.includes(query) || endDate.includes(query);
+    })
+    .sort((a: any, b: any) => {
+      // Sort by created_at descending (newest first)
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
 
   // Sort items by sort_order, then filter
   const sortedShoppingItems = [...shoppingItems].sort((a: any, b: any) => {
