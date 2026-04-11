@@ -92,6 +92,16 @@ export interface MenuVote {
   created_at: number;
 }
 
+/** familyMemberId in POST /api/menu/vote maps to household_members.id */
+export interface MenuItemMemberVote {
+  id: string;
+  household_member_id: string;
+  menu_item_id: string;
+  vote: VoteValue;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface ShoppingList {
   id: string;
   household_id: string;

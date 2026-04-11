@@ -11,6 +11,10 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import type { MenuPlan, MenuItem, MealType, MenuVote, VoteValue } from "@/types";
+import {
+  formatMenuCalendarDate,
+  getMenuCalendarWeekDates,
+} from "@/lib/menuCalendar/weekRange";
 
 export default function MenuCalendarPage() {
   return (
@@ -256,22 +260,7 @@ function MenuCalendarContent() {
     }
   };
 
-  // Get dates for current week
-  const getWeekDates = (): Date[] => {
-    const dates: Date[] = [];
-    const startOfWeek = new Date(currentDate);
-    const day = startOfWeek.getDay();
-    const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1); // Adjust to Monday
-    startOfWeek.setDate(diff);
-    startOfWeek.setHours(0, 0, 0, 0);
-
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(startOfWeek);
-      date.setDate(startOfWeek.getDate() + i);
-      dates.push(date);
-    }
-    return dates;
-  };
+  const getWeekDates = (): Date[] => getMenuCalendarWeekDates(currentDate);
 
   // Get dates for current month
   const getMonthDates = (): Date[] => {
@@ -291,10 +280,7 @@ function MenuCalendarContent() {
     return dates;
   };
 
-  // Format date to YYYY-MM-DD
-  const formatDate = (date: Date): string => {
-    return date.toISOString().split("T")[0];
-  };
+  const formatDate = formatMenuCalendarDate;
 
   // Format date for display
   const formatDateDisplay = (date: Date): string => {

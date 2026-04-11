@@ -91,6 +91,15 @@ export const schema = {
     vote: { type: "number" }, // 1 for upvote, -1 for downvote
     created_at: { type: "number" },
   },
+  /** One row per (household_member, menu_item); API body uses familyMemberId = household_members.id */
+  menu_item_member_votes: {
+    id: { type: "string" },
+    household_member_id: { type: "string" },
+    menu_item_id: { type: "string" },
+    vote: { type: "number" }, // 1 up, -1 down
+    created_at: { type: "number" },
+    updated_at: { type: "number" },
+  },
   shopping_lists: {
     id: { type: "string" },
     household_id: { type: "string" },
