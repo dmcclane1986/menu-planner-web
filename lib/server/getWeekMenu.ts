@@ -4,7 +4,10 @@ import {
   formatMenuCalendarDate,
   getMenuCalendarWeekDates,
 } from "@/lib/menuCalendar/weekRange";
-import { getInstantAdmin } from "@/lib/server/instantAdmin";
+import {
+  getInstantAdmin,
+  getInstantAdminConfigError,
+} from "@/lib/server/instantAdmin";
 import type { MealType } from "@/types";
 
 const MEAL_ORDER: MealType[] = ["breakfast", "lunch", "dinner"];
@@ -62,7 +65,7 @@ export async function getWeekMenuJson(
     return {
       ok: false,
       error: "config",
-      message: "InstantDB admin is not configured (NEXT_PUBLIC_INSTANTDB_APP_ID, INSTANT_APP_ADMIN_TOKEN).",
+      message: getInstantAdminConfigError(),
     };
   }
 

@@ -1,7 +1,11 @@
 import { id } from "@instantdb/admin";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getInstantAdmin } from "@/lib/server/instantAdmin";
+import {
+  getInstantAdmin,
+  getInstantAdminConfigError,
+  getInstantEnvDebug,
+} from "@/lib/server/instantAdmin";
 import { authorizeMenuPlannerApiKey } from "@/lib/server/menuPlannerApiAuth";
 import type { VoteValue } from "@/types";
 
@@ -30,10 +34,11 @@ export async function POST(request: NextRequest) {
 
   const admin = getInstantAdmin();
   if (!admin) {
-    return NextResponse.json(
-      { error: "InstantDB admin is not configured" },
-      { status: 503 }
-    );
+    const body: Record<string, unknown> = { error: getInstantAdminConfigError() };
+    if (process.env.NODE_ENV === "development") {
+      body._instantEnvDebug = getInstantEnvDebug();
+    }
+    return NextResponse.json(body, { status: 503 });
   }
 
   let json: unknown;

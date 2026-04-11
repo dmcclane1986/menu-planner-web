@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWeekMenuJson } from "@/lib/server/getWeekMenu";
+import { getInstantEnvDebug } from "@/lib/server/instantAdmin";
 import { authorizeMenuPlannerApiKey } from "@/lib/server/menuPlannerApiAuth";
 
 // Env: MENU_PLANNER_API_KEY — authenticate with header: Authorization: Bearer <MENU_PLANNER_API_KEY>
@@ -33,10 +34,13 @@ export async function GET(request: NextRequest) {
 
   const result = await getWeekMenuJson(householdId, anchor);
   if (!result.ok) {
-    return NextResponse.json(
-      { error: result.message ?? "Server misconfiguration" },
-      { status: 503 }
-    );
+    const body: Record<string, unknown> = {
+      error: result.message ?? "Server misconfiguration",
+    };
+    if (process.env.NODE_ENV === "development") {
+      body._instantEnvDebug = getInstantEnvDebug();
+    }
+    return NextResponse.json(body, { status: 503 });
   }
 
   return NextResponse.json(result.data);
