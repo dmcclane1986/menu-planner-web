@@ -5,8 +5,10 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/lib/instantdb/auth";
 import { db } from "@/lib/instantdb/config";
 import { Card } from "@/components/ui/Card";
-import { calculateVoteScore } from "@/lib/utils/votes";
-import type { MenuItem, MenuPlan, MenuVote, ShoppingList } from "@/types";
+import {
+  memberVoteTotalForItem,
+  menuPlanVoteTotalForItem,
+} from "@/lib/utils/menuItemPopularity";
 
 export default function StatisticsPage() {
   return (
@@ -69,6 +71,20 @@ function StatisticsContent() {
     menu_votes: {},
   });
 
+  const itemMemberVotesQuery = db.useQuery({
+    menu_item_member_votes: {},
+  });
+
+  const householdRosterQuery = db.useQuery(
+    selectedHouseholdId
+      ? {
+          household_members: {
+            $: { where: { household_id: selectedHouseholdId } },
+          },
+        }
+      : null
+  );
+
   // Query shopping lists
   const shoppingListsQuery = db.useQuery(
     selectedHouseholdId
@@ -87,6 +103,8 @@ function StatisticsContent() {
   const menuItems = menuItemsQuery.data?.menu_items || [];
   const menuPlans = menuPlansQuery.data?.menu_plans || [];
   const allVotes = votesQuery.data?.menu_votes || [];
+  const allItemMemberVotes = itemMemberVotesQuery.data?.menu_item_member_votes || [];
+  const householdRoster = householdRosterQuery.data?.household_members || [];
   const shoppingLists = shoppingListsQuery.data?.shopping_lists || [];
 
   const isLoading =
@@ -95,6 +113,8 @@ function StatisticsContent() {
     menuItemsQuery.isLoading ||
     menuPlansQuery.isLoading ||
     votesQuery.isLoading ||
+    itemMemberVotesQuery.isLoading ||
+    householdRosterQuery.isLoading ||
     shoppingListsQuery.isLoading;
 
   // Filter households to only those the user is a member of
@@ -117,54 +137,84 @@ function StatisticsContent() {
   const menuPlanIds = new Set(menuPlans.map((p: any) => p.id));
   const relevantVotes = allVotes.filter((v: any) => menuPlanIds.has(v.menu_plan_id));
 
-  // Calculate most popular menu items
+  const householdMemberIds = new Set(householdRoster.map((m: any) => m.id));
+  const menuItemIdsInHousehold = new Set(menuItems.map((i: any) => i.id));
+  const relevantMemberVotes = allItemMemberVotes.filter(
+    (mv: any) =>
+      menuItemIdsInHousehold.has(mv.menu_item_id) &&
+      householdMemberIds.has(mv.household_member_id)
+  );
+
+  // Calculate most popular menu items (calendar menu_votes + API menu_item_member_votes)
   const menuItemStats = menuItems.map((item: any) => {
     const itemPlans = menuPlans.filter((p: any) => p.menu_item_id === item.id);
     const planIds = new Set(itemPlans.map((p: any) => p.id));
-    const itemVotes = relevantVotes.filter((v: any) => planIds.has(v.menu_plan_id));
-    
-    // Group votes by plan
-    const votesByPlan = new Map<string, typeof itemVotes>();
-    itemVotes.forEach((v: any) => {
-      if (!votesByPlan.has(v.menu_plan_id)) {
-        votesByPlan.set(v.menu_plan_id, []);
-      }
-      votesByPlan.get(v.menu_plan_id)!.push(v);
-    });
+    const itemMenuVotes = relevantVotes.filter((v: any) => planIds.has(v.menu_plan_id));
+    const itemMemberVotesForItem = relevantMemberVotes.filter(
+      (mv: any) => mv.menu_item_id === item.id
+    );
 
-    let totalVoteScore = 0;
+    const planScore = menuPlanVoteTotalForItem(
+      item.id,
+      menuPlans as unknown as { id: string; menu_item_id: string }[],
+      relevantVotes as unknown as { menu_plan_id: string; vote: number }[]
+    );
+    const memberScore = memberVoteTotalForItem(
+      item.id,
+      householdMemberIds,
+      relevantMemberVotes as unknown as {
+        menu_item_id: string;
+        household_member_id: string;
+        vote: number;
+      }[]
+    );
+    const combinedScore = planScore + memberScore;
+
     let upvotes = 0;
     let downvotes = 0;
-    votesByPlan.forEach((votes) => {
-      const score = calculateVoteScore(votes as MenuVote[]);
-      totalVoteScore += score;
-      votes.forEach((v: any) => {
-        if (v.vote === 1) upvotes++;
-        if (v.vote === -1) downvotes++;
-      });
+    itemMenuVotes.forEach((v: any) => {
+      if (v.vote === 1) upvotes++;
+      if (v.vote === -1) downvotes++;
+    });
+    itemMemberVotesForItem.forEach((mv: any) => {
+      if (mv.vote === 1) upvotes++;
+      if (mv.vote === -1) downvotes++;
     });
 
     return {
       ...item,
       planCount: itemPlans.length,
-      totalVoteScore,
+      totalVoteScore: combinedScore,
+      combinedScore,
       upvotes,
       downvotes,
-      voteCount: itemVotes.length,
+      voteCount: itemMenuVotes.length + itemMemberVotesForItem.length,
     };
   });
 
-  // Sort by popularity score (descending)
   const mostPopular = [...menuItemStats]
     .filter((item) => !item.is_hidden)
-    .sort((a, b) => b.popularity_score - a.popularity_score)
+    .sort((a, b) => b.combinedScore - a.combinedScore)
     .slice(0, 10);
 
-  // Calculate voting statistics
-  const totalVotes = relevantVotes.length;
-  const totalUpvotes = relevantVotes.filter((v: any) => v.vote === 1).length;
-  const totalDownvotes = relevantVotes.filter((v: any) => v.vote === -1).length;
-  const uniqueVoters = new Set(relevantVotes.map((v: any) => v.user_id)).size;
+  const totalVotes = relevantVotes.length + relevantMemberVotes.length;
+  const totalUpvotes =
+    relevantVotes.filter((v: any) => v.vote === 1).length +
+    relevantMemberVotes.filter((mv: any) => mv.vote === 1).length;
+  const totalDownvotes =
+    relevantVotes.filter((v: any) => v.vote === -1).length +
+    relevantMemberVotes.filter((mv: any) => mv.vote === -1).length;
+
+  const memberIdToUserId = new Map(
+    householdRoster.map((m: any) => [m.id, m.user_id] as const)
+  );
+  const uniqueVoterIds = new Set<string>();
+  relevantVotes.forEach((v: any) => uniqueVoterIds.add(v.user_id));
+  relevantMemberVotes.forEach((mv: any) => {
+    const uid = memberIdToUserId.get(mv.household_member_id);
+    if (uid) uniqueVoterIds.add(uid);
+  });
+  const uniqueVoters = uniqueVoterIds.size;
 
   // Calculate meal planning frequency
   const now = new Date();
@@ -273,7 +323,7 @@ function StatisticsContent() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-primary">{item.popularity_score}</p>
+                      <p className="font-semibold text-primary">{item.combinedScore}</p>
                       <p className="text-xs text-gray-400">popularity</p>
                     </div>
                   </div>

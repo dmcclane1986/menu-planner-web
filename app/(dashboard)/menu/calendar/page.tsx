@@ -7,6 +7,7 @@ import { db } from "@/lib/instantdb/config";
 import { createMenuPlan, deleteMenuPlan, updateMenuPlan } from "@/lib/utils/menuPlans";
 import { createOrUpdateVote, deleteVote, calculateVoteScore } from "@/lib/utils/votes";
 import { updateMenuItem } from "@/lib/utils/menu";
+import { combinedPopularityScoreForItem } from "@/lib/utils/menuItemPopularity";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
@@ -87,6 +88,20 @@ function MenuCalendarContent() {
     menu_votes: {},
   });
 
+  const itemMemberVotesQuery = db.useQuery({
+    menu_item_member_votes: {},
+  });
+
+  const householdRosterQuery = db.useQuery(
+    selectedHouseholdId
+      ? {
+          household_members: {
+            $: { where: { household_id: selectedHouseholdId } },
+          },
+        }
+      : null
+  );
+
   // Query sides for selected household
   const sidesQuery = db.useQuery(
     selectedHouseholdId
@@ -110,6 +125,8 @@ function MenuCalendarContent() {
   const menuItems = menuItemsQuery.data?.menu_items || [];
   const allMenuPlans = menuPlansQuery.data?.menu_plans || [];
   const allVotes = votesQuery.data?.menu_votes || [];
+  const allItemMemberVotes = itemMemberVotesQuery.data?.menu_item_member_votes || [];
+  const householdRoster = householdRosterQuery.data?.household_members || [];
   const allSides = sidesQuery.data?.sides || [];
   const allEntreeSides = entreeSidesQuery.data?.entree_sides || [];
 
@@ -117,12 +134,21 @@ function MenuCalendarContent() {
   const menuPlanIds = new Set(allMenuPlans.map((p: any) => p.id));
   const relevantVotes = allVotes.filter((v: any) => menuPlanIds.has(v.menu_plan_id));
 
+  const householdMemberIds = new Set(householdRoster.map((m: any) => m.id));
+  const menuItemIdSet = new Set(menuItems.map((mi: any) => mi.id));
+  const relevantItemMemberVotes = allItemMemberVotes.filter(
+    (mv: any) =>
+      menuItemIdSet.has(mv.menu_item_id) && householdMemberIds.has(mv.household_member_id)
+  );
+
   const isLoading =
     membersQuery.isLoading ||
     householdsQuery.isLoading ||
     menuItemsQuery.isLoading ||
     menuPlansQuery.isLoading ||
     votesQuery.isLoading ||
+    itemMemberVotesQuery.isLoading ||
+    householdRosterQuery.isLoading ||
     sidesQuery.isLoading ||
     entreeSidesQuery.isLoading;
 
@@ -215,38 +241,25 @@ function MenuCalendarContent() {
         });
       }
 
-      // Update menu item popularity score
+      // Update menu item popularity score (calendar votes + API member votes)
       const plan = allMenuPlans.find((p: any) => p.id === planId);
       if (plan) {
-        // Recalculate votes after a brief delay to allow DB to update
         setTimeout(async () => {
-          const itemPlans = allMenuPlans.filter((p: any) => p.menu_item_id === plan.menu_item_id);
-          let totalScore = 0;
-          
-          // Get fresh votes
-          const freshVotes = allVotes.filter((v: any) => 
-            itemPlans.some((p: any) => p.id === v.menu_plan_id)
+          const totalScore = combinedPopularityScoreForItem(
+            plan.menu_item_id,
+            allMenuPlans as unknown as { id: string; menu_item_id: string }[],
+            allVotes as unknown as { menu_plan_id: string; vote: number }[],
+            householdMemberIds,
+            relevantItemMemberVotes as unknown as {
+              menu_item_id: string;
+              household_member_id: string;
+              vote: number;
+            }[]
           );
-          
-          // Group votes by menu plan
-          const votesByPlan = new Map<string, MenuVote[]>();
-          freshVotes.forEach((v: any) => {
-            if (!votesByPlan.has(v.menu_plan_id)) {
-              votesByPlan.set(v.menu_plan_id, []);
-            }
-            votesByPlan.get(v.menu_plan_id)!.push(v as MenuVote);
-          });
-          
-          // Calculate total score
-          votesByPlan.forEach((votes) => {
-            totalScore += calculateVoteScore(votes);
-          });
 
-          // Get household to check popularity threshold
           const household = allHouseholds.find((h: any) => h.id === plan.household_id);
           const threshold = household?.popularity_threshold ?? -5;
 
-          // Update menu item popularity score and is_hidden based on threshold
           await updateMenuItem(plan.menu_item_id, {
             popularity_score: totalScore,
             is_hidden: totalScore < threshold,

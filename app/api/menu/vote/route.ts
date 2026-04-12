@@ -7,6 +7,7 @@ import {
   getInstantEnvDebug,
 } from "@/lib/server/instantAdmin";
 import { authorizeMenuPlannerApiKey } from "@/lib/server/menuPlannerApiAuth";
+import { recomputeMenuItemPopularity } from "@/lib/server/recomputeMenuItemPopularity";
 import type { VoteValue } from "@/types";
 
 // Env: MENU_PLANNER_API_KEY — Authorization: Bearer <MENU_PLANNER_API_KEY>
@@ -140,6 +141,12 @@ export async function POST(request: NextRequest) {
         updated_at: now,
       }),
     ]);
+  }
+
+  try {
+    await recomputeMenuItemPopularity(admin, menuItemId, householdId);
+  } catch (e) {
+    console.error("menu vote: popularity recompute failed", e);
   }
 
   return NextResponse.json({ ok: true });
