@@ -10,6 +10,14 @@ import { Card } from "@/components/ui/Card";
 import type { MealType, MenuGenre } from "@/types";
 import { createMenuPlan, deleteMenuPlan } from "@/lib/utils/menuPlans";
 import { saveAIPreferences } from "@/lib/utils/aiPreferences";
+import {
+  itemHasAnyVoteActivity,
+  memberVoteTotalForItem,
+  menuPlanVoteTotalForItem,
+  type MenuItemMemberVoteRef,
+  type MenuPlanRef,
+  type MenuVoteRef,
+} from "@/lib/utils/menuItemPopularity";
 
 export default function AIMenuPage() {
   return (
@@ -102,17 +110,90 @@ function AIMenuContent() {
       : null
   );
 
+  const votesQuery = db.useQuery({
+    menu_votes: {},
+  });
+
+  const itemMemberVotesQuery = db.useQuery({
+    menu_item_member_votes: {},
+  });
+
+  const householdRosterQuery = db.useQuery(
+    selectedHouseholdId
+      ? {
+          household_members: {
+            $: { where: { household_id: selectedHouseholdId } },
+          },
+        }
+      : null
+  );
+
   const householdMembers = useMemo(() => membersQuery.data?.household_members || [], [membersQuery.data?.household_members]);
   const allHouseholds = useMemo(() => householdsQuery.data?.households || [], [householdsQuery.data?.households]);
   const menuItems = menuItemsQuery.data?.menu_items || [];
   const aiPreferences = aiPreferencesQuery.data?.ai_preferences?.[0];
   const existingMenuPlans = menuPlansQuery.data?.menu_plans || [];
+  const allMenuVotes = votesQuery.data?.menu_votes || [];
+  const allItemMemberVotes = itemMemberVotesQuery.data?.menu_item_member_votes || [];
+  const householdRoster = householdRosterQuery.data?.household_members || [];
+
+  const menuItemsForAI = useMemo(() => {
+    if (!selectedHouseholdId || menuItems.length === 0) {
+      return [];
+    }
+    const planIds = new Set(existingMenuPlans.map((p: any) => p.id));
+    const relevantVotes = allMenuVotes.filter((v: any) => planIds.has(v.menu_plan_id));
+    const householdMemberIds = new Set(householdRoster.map((m: any) => m.id));
+    const menuItemIds = new Set(menuItems.map((i: any) => i.id));
+    const relevantMemberVotes = allItemMemberVotes.filter(
+      (mv: any) =>
+        menuItemIds.has(mv.menu_item_id) &&
+        householdMemberIds.has(mv.household_member_id)
+    );
+
+    const plans = existingMenuPlans as unknown as MenuPlanRef[];
+    const votes = relevantVotes as unknown as MenuVoteRef[];
+    const memberVotes = relevantMemberVotes as unknown as MenuItemMemberVoteRef[];
+
+    return menuItems.map((mi: any) => {
+      const calendarNet = menuPlanVoteTotalForItem(mi.id, plans, votes);
+      const memberNet = memberVoteTotalForItem(mi.id, householdMemberIds, memberVotes);
+      const combined = calendarNet + memberNet;
+      const has_vote_activity = itemHasAnyVoteActivity(
+        mi.id,
+        plans,
+        votes,
+        householdMemberIds,
+        memberVotes
+      );
+      return {
+        id: mi.id,
+        name: mi.name,
+        genre: mi.genre,
+        popularity_score: combined,
+        has_vote_activity,
+        votes_from_calendar_plans: calendarNet,
+        votes_from_member_app: memberNet,
+      };
+    });
+  }, [
+    selectedHouseholdId,
+    menuItems,
+    existingMenuPlans,
+    allMenuVotes,
+    allItemMemberVotes,
+    householdRoster,
+  ]);
 
   const isLoading =
     membersQuery.isLoading ||
     householdsQuery.isLoading ||
     menuItemsQuery.isLoading ||
-    aiPreferencesQuery.isLoading;
+    aiPreferencesQuery.isLoading ||
+    votesQuery.isLoading ||
+    itemMemberVotesQuery.isLoading ||
+    householdRosterQuery.isLoading ||
+    menuPlansQuery.isLoading;
 
   // Filter households to only those the user is a member of
   const userHouseholds = householdMembers
@@ -313,7 +394,7 @@ function AIMenuContent() {
         .filter((mi: any) => excludedMenuItemIds.has(mi.id))
         .map((mi: any) => mi.name);
 
-      // Call API to generate menu
+      // Call API to generate menu (popularity from menu_votes + menu_item_member_votes)
       const response = await fetch("/api/ai/generate-menu", {
         method: "POST",
         headers: {
@@ -321,12 +402,7 @@ function AIMenuContent() {
         },
         body: JSON.stringify({
           householdId: selectedHouseholdId,
-          menuItems: menuItems.map((mi: any) => ({
-            id: mi.id,
-            name: mi.name,
-            genre: mi.genre,
-            popularity_score: mi.popularity_score || 0,
-          })),
+          menuItems: menuItemsForAI,
           selections: selectionsToGenerate,
           dietaryInstructions,
           genreWeights,

@@ -67,3 +67,23 @@ export function combinedPopularityScoreForItem(
     memberVoteTotalForItem(menuItemId, householdMemberIds, memberVotes)
   );
 }
+
+/** True if there is at least one menu_vote on a plan for this item or a member vote for this item. */
+export function itemHasAnyVoteActivity(
+  menuItemId: string,
+  menuPlans: MenuPlanRef[],
+  menuVotes: MenuVoteRef[],
+  householdMemberIds: Set<string>,
+  memberVotes: MenuItemMemberVoteRef[]
+): boolean {
+  const itemPlans = menuPlans.filter((p) => p.menu_item_id === menuItemId);
+  const planIds = new Set(itemPlans.map((p) => p.id));
+  if (menuVotes.some((v) => planIds.has(v.menu_plan_id))) {
+    return true;
+  }
+  return memberVotes.some(
+    (mv) =>
+      mv.menu_item_id === menuItemId &&
+      householdMemberIds.has(mv.household_member_id)
+  );
+}

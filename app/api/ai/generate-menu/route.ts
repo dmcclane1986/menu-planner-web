@@ -6,7 +6,17 @@ interface MenuItem {
   id: string;
   name: string;
   genre: MenuGenre;
+  /** Combined net from calendar (menu_votes per plan) + family app (menu_item_member_votes). */
   popularity_score: number;
+  /**
+   * When set, used to classify “no votes yet” vs “has votes” (handles net score 0 with real ballots).
+   * Older clients omit this and we fall back to popularity_score !== 0.
+   */
+  has_vote_activity?: boolean;
+  /** Net from votes on scheduled menu plans (menu_votes). */
+  votes_from_calendar_plans?: number;
+  /** Net from household member votes (menu_item_member_votes), e.g. chore-defense. */
+  votes_from_member_app?: number;
 }
 
 interface Selection {
@@ -79,29 +89,45 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build prompt for OpenAI
-    // Separate items with votes from items without votes
-    const itemsWithVotes = menuItems.filter((item) => item.popularity_score !== 0);
-    const itemsWithoutVotes = menuItems.filter((item) => item.popularity_score === 0);
+    const itemHasVoteActivity = (item: MenuItem): boolean =>
+      item.has_vote_activity !== undefined
+        ? item.has_vote_activity
+        : item.popularity_score !== 0;
+
+    const formatSigned = (n: number): string => (n > 0 ? `+${n}` : `${n}`);
+
+    const formatVotedItemLine = (item: MenuItem): string => {
+      const score = item.popularity_score;
+      const indicator = score > 0 ? "👍" : score < 0 ? "👎" : "";
+      let line = `- ${item.name} (${item.genre}) - Combined net: ${formatSigned(score)} ${indicator}`;
+      if (
+        item.votes_from_calendar_plans !== undefined &&
+        item.votes_from_member_app !== undefined
+      ) {
+        line += ` (calendar/scheduled meals: ${formatSigned(item.votes_from_calendar_plans)}; family app: ${formatSigned(item.votes_from_member_app)})`;
+      }
+      return line;
+    };
+
+    // Votes come from menu_votes (calendar) and menu_item_member_votes (API); “no votes” = no ballots in either.
+    const itemsWithVotes = menuItems.filter((item) => itemHasVoteActivity(item));
+    const itemsWithoutVotes = menuItems.filter((item) => !itemHasVoteActivity(item));
 
     let menuItemsList = "";
-    
+
     if (itemsWithVotes.length > 0) {
-      menuItemsList += "Menu Items with Member Votes (prefer these based on popularity):\n";
-      // Sort by popularity score (highest first)
-      const sortedItems = [...itemsWithVotes].sort((a, b) => b.popularity_score - a.popularity_score);
-      menuItemsList += sortedItems
-        .map((item) => {
-          const score = item.popularity_score;
-          const indicator = score > 0 ? "👍" : score < 0 ? "👎" : "";
-          return `- ${item.name} (${item.genre}) - Popularity: ${score > 0 ? "+" : ""}${score} ${indicator}`;
-        })
-        .join("\n");
+      menuItemsList +=
+        "Menu Items with votes (from calendar scheduled meals and/or family app — combined for popularity):\n";
+      const sortedItems = [...itemsWithVotes].sort(
+        (a, b) => b.popularity_score - a.popularity_score
+      );
+      menuItemsList += sortedItems.map(formatVotedItemLine).join("\n");
       menuItemsList += "\n\n";
     }
-    
+
     if (itemsWithoutVotes.length > 0) {
-      menuItemsList += "Menu Items (no votes yet, equal preference):\n";
+      menuItemsList +=
+        "Menu Items (no votes recorded yet in the calendar or family app — equal preference for exploration):\n";
       menuItemsList += itemsWithoutVotes
         .map((item) => `- ${item.name} (${item.genre})`)
         .join("\n");
@@ -138,14 +164,12 @@ IMPORTANT: Do NOT select any of the excluded menu items listed above. These item
 
     const hasVotingData = itemsWithVotes.length > 0;
     const votingInstructions = hasVotingData
-      ? `\n5. IMPORTANT: Use popularity scores to reflect household member preferences:
-   - Items with no votes (0) have highest preference  --prioritize these
-   - Items with positive popularity scores (👍) are liked by household members when 0 no votes remain --prioritize these
-   - Items with negative popularity scores (👎) are disliked - avoid these when possible
-   
-   - When no votes are present, prioritize items with no votes (0)
-   - When items have votes, strongly prefer higher-scored items over lower-scored ones
-   - Only use items with negative scores if no better alternatives exist`
+      ? `\n5. IMPORTANT: Voting data combines (a) votes on scheduled meals in the app calendar and (b) votes from the family/household app. Use the combined net scores and breakdowns to infer preferences:
+   - Items listed as having no votes yet have no ballots in either system — prioritize them for variety and discovery when appropriate
+   - Items with positive combined scores (👍) are generally liked; prefer higher combined scores over lower ones
+   - Items with negative combined scores (👎) are generally disliked — avoid when better options exist
+   - A combined score of 0 can still mean real votes that cancelled out; use the per-source breakdown when provided
+   - Only use strongly negative items if no better alternatives exist`
       : "";
 
     const exclusionRequirement = excludedMenuItemNames && excludedMenuItemNames.length > 0
