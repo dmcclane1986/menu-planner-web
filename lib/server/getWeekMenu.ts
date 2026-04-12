@@ -13,7 +13,10 @@ import type { MealType } from "@/types";
 const MEAL_ORDER: MealType[] = ["breakfast", "lunch", "dinner"];
 
 export type WeekMenuMealJson = {
+  /** Stable menu_plans row id (scheduled slot). */
   id: string;
+  /** menu_items id — send as menuItemId in POST /api/menu/vote. */
+  menuItemId: string;
   slot?: string;
   label: string;
 };
@@ -109,6 +112,7 @@ export async function getWeekMenuJson(
       const side = p.side_id ? sideById.get(p.side_id) : undefined;
       return {
         id: p.id,
+        menuItemId: p.menu_item_id,
         slot: p.meal_type,
         label: mealLabel(entree, side),
       };

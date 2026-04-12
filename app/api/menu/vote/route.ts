@@ -12,11 +12,31 @@ import type { VoteValue } from "@/types";
 // Env: MENU_PLANNER_API_KEY — Authorization: Bearer <MENU_PLANNER_API_KEY>
 export const dynamic = "force-dynamic";
 
-const bodySchema = z.object({
-  familyMemberId: z.string().min(1),
-  menuItemId: z.string().min(1),
-  vote: z.enum(["up", "down"]),
-});
+/** CamelCase wins if both are sent (chore-defense may send snake_case duplicates). */
+const bodySchema = z
+  .object({
+    householdId: z.string().min(1).optional(),
+    household_id: z.string().min(1).optional(),
+    familyMemberId: z.string().min(1).optional(),
+    family_member_id: z.string().min(1).optional(),
+    menuItemId: z.string().min(1).optional(),
+    menu_item_id: z.string().min(1).optional(),
+    vote: z.enum(["up", "down"]),
+  })
+  .transform((data) => ({
+    householdId: data.householdId ?? data.household_id,
+    familyMemberId: data.familyMemberId ?? data.family_member_id,
+    menuItemId: data.menuItemId ?? data.menu_item_id,
+    vote: data.vote,
+  }))
+  .pipe(
+    z.object({
+      householdId: z.string().min(1),
+      familyMemberId: z.string().min(1),
+      menuItemId: z.string().min(1),
+      vote: z.enum(["up", "down"]),
+    })
+  );
 
 type MenuItemRow = { id: string; household_id: string };
 type MemberRow = { id: string; household_id: string };
@@ -56,7 +76,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { familyMemberId, menuItemId, vote } = parsed.data;
+  const { householdId, familyMemberId, menuItemId, vote } = parsed.data;
   const voteValue: VoteValue = vote === "up" ? 1 : -1;
 
   const data = await admin.query({
@@ -85,6 +105,13 @@ export async function POST(request: NextRequest) {
   if (member.household_id !== menuItem.household_id) {
     return NextResponse.json(
       { error: "Menu item is not in the same household as this member" },
+      { status: 403 }
+    );
+  }
+
+  if (menuItem.household_id !== householdId) {
+    return NextResponse.json(
+      { error: "householdId does not match this menu item or family member" },
       { status: 403 }
     );
   }
